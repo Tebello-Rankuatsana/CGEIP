@@ -1,8 +1,8 @@
-const express = require('express');
+import express from 'express';
 const app = express();
-const cors = require('cors');
-require('dotenv').config();
-
+import cors from 'cors';
+import 'dotenv/config.js';
+import studentRoutes from './routes/studentRoutes.js';
 
 
 app.use(cors());
@@ -10,11 +10,13 @@ app.use(express.json());
 
 
 app.get('/', (req, res) => {
-  res.send('Hello World!');
+  res.send('<h1>Backend is running.<h1>');
 });
+
+app.use('/students', studentRoutes);
 
 
 const port = process.env.PORT || 5001;
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`backend is running on port ${port}`);
 });
