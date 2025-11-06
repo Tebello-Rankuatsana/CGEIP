@@ -1,8 +1,5 @@
-POST http://localhost:5001/api/student/register
-//FIXME: Adjust the URL according to your actual endpoint
-Body (JSON):
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "123456"
-}
+# POST http://localhost:5001/api/student/register
+
+
+## get all students
+GET http://localhost:5001/api/student  

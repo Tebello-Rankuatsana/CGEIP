@@ -13,8 +13,12 @@ app.get('/', (req, res) => {
   res.send('<h1>Backend is running.<h1>');
 });
 
-app.use('/students', studentRoutes);
+app.use("/api/student", studentRoutes);
 
+// just insuring the route is working
+app.get("/api/student",(req, res) => {
+  res.status(200).json({ message: "Route found" });
+});
 
 const port = process.env.PORT || 5001;
 app.listen(port, () => {
