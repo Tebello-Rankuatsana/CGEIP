@@ -3,3 +3,22 @@
 
 ## get all students
 GET http://localhost:5001/api/student  
+
+###Testing adding an institution
+POST http://localhost:5001/api/admin/addInstitution
+Content-Type: application/json
+
+{
+  "name": "National University of Lesotho",
+  "description": "A top university in Lesotho"
+}
+
+###Testing student registration
+POST http://localhost:5001/api/student/register
+Content-Type: application/json
+
+{
+  "name": "Rankuatsana",
+  "email": "ranks@example.com",
+  "password": "hello2468"
+}

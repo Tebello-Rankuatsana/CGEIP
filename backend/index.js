@@ -2,7 +2,12 @@ import express from 'express';
 const app = express();
 import cors from 'cors';
 import 'dotenv/config.js';
+
+
 import studentRoutes from './routes/studentRoutes.js';
+import adminRoutes from "./routes/adminRoutes.js";
+import instituteRoutes from "./routes/instituteRoutes.js";
+import companyRoutes from "./routes/companyRoutes.js";
 
 
 app.use(cors());
@@ -14,11 +19,18 @@ app.get('/', (req, res) => {
 });
 
 app.use("/api/student", studentRoutes);
+app.use("/api/student", studentRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/institute", instituteRoutes);
+app.use("/api/company", companyRoutes);
+
 
 // just insuring the route is working
 app.get("/api/student",(req, res) => {
   res.status(200).json({ message: "Route found" });
 });
+
+
 
 const port = process.env.PORT || 5001;
 app.listen(port, () => {
