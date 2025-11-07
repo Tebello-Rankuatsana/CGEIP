@@ -25,11 +25,19 @@ app.use("/api/institute", instituteRoutes);
 app.use("/api/company", companyRoutes);
 
 
-// just insuring the route is working
+// just insuring the routes are working
 app.get("/api/student",(req, res) => {
   res.status(200).json({ message: "Route found" });
 });
-
+app.get("/api/admin",(req, res) => {
+  res.status(200).json({ message: "Route found" });
+});
+app.get("/api/institute",(req, res) => {
+  res.status(200).json({ message: "Route found" });
+}); 
+app.get("/api/company",(req, res) => {
+  res.status(200).json({ message: "Route found" });
+});
 
 
 const port = process.env.PORT || 5001;

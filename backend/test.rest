@@ -22,3 +22,32 @@ Content-Type: application/json
   "email": "ranks@example.com",
   "password": "hello2468"
 }
+###Testing company registration
+POST http://localhost:5001/api/company/register
+Content-Type: application/json
+
+{
+  "name": "Tech Solutions",
+  "email": "tch@gmail.com",
+  "password": "tech1234" 
+}
+
+###Testing institute registration
+POST http://localhost:5001/api/institute/register   
+Content-Type: application/json
+
+{
+  "name": "Global Tech Institute",
+  "email": "gtc@gmail.com",
+  "password": "global1234" 
+}
+
+###Testing admin registration
+POST http://localhost:5001/api/admin/register  
+Content-Type: application/json
+
+{
+  "name": "Admin User",
+  "email": "ad1@gmail.com",
+  "password": "admin1234"
+}
