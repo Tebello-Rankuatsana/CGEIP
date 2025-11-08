@@ -37,7 +37,7 @@ POST http://localhost:5001/api/institute/register
 Content-Type: application/json
 
 {
-  "name": "Global Tech Institute",
+  "name": "Global Tech Institute comp two",
   "email": "gtc@gmail.com",
   "password": "global1234" 
 }
@@ -47,7 +47,24 @@ POST http://localhost:5001/api/admin/register
 Content-Type: application/json
 
 {
-  "name": "Admin User",
+  "name": "Admin User2",
   "email": "ad1@gmail.com",
   "password": "admin1234"
+}
+
+### Base URL
+@baseUrl = http://localhost:5001/api
+
+### TEST STUDENT REGISTRATION
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Sadam Hussein",
+  "email": "sadam@student.com",
+  "password": "nineeleven",
+  "role": "student",
+  "phone": "2468101214",
+  "dateOfBirth": "2000-01-01",
+  "address": "Ha Matala, Maseru"
 }

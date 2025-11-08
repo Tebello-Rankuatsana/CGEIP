@@ -1,0 +1,254 @@
+### Base URL
+@baseUrl = http://localhost:5001/api
+
+### 1. HEALTH CHECK
+GET {{baseUrl}}/health
+
+### 2. CREATE TEST DATA
+### Register Student
+# @name registerStudent
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test Student",
+  "email": "teststudent@email.com",
+  "password": "password123",
+  "role": "student",
+  "phone": "1234567890",
+  "dateOfBirth": "2000-01-01",
+  "address": "123 Test Street, Maseru"
+}
+
+### Register Institution
+# @name registerInstitution
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test University",
+  "email": "testuniversity@email.com",
+  "password": "password123",
+  "role": "institute",
+  "contactPerson": "Test Director",
+  "phone": "9876543210",
+  "address": "456 University Road, Lesotho",
+  "website": "https://testuniversity.edu.ls"
+}
+
+### Register Company
+# @name registerCompany
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test Company Ltd",
+  "email": "testcompany@email.com",
+  "password": "password123",
+  "role": "company",
+  "industry": "Technology",
+  "website": "https://testcompany.ls",
+  "address": "789 Business District, Maseru"
+}
+
+### 3. EXTRACT IDs FROM RESPONSES
+@studentId = {{registerStudent.response.body.$.userId}}
+@instituteId = {{registerInstitution.response.body.$.userId}}
+@companyId = {{registerCompany.response.body.$.userId}}
+
+### 4. CREATE COURSES FOR INSTITUTION
+### Add Faculty First
+# @name addFaculty
+POST {{baseUrl}}/institute/faculties
+Content-Type: application/json
+
+{
+  "instituteId": "{{instituteId}}",
+  "name": "Faculty of Technology",
+  "description": "Technology and Computer Science programs"
+}
+
+### Add Course 1
+# @name addCourse1
+POST {{baseUrl}}/institute/courses
+Content-Type: application/json
+
+{
+  "instituteId": "{{instituteId}}",
+  "name": "Software Engineering",
+  "faculty": "Faculty of Technology",
+  "duration": 4,
+  "requirements": "High School Diploma with Math and Science",
+  "description": "Learn software development, algorithms, and system design",
+  "tuitionFee": 15000,
+  "capacity": 50
+}
+
+### Add Course 2
+# @name addCourse2
+POST {{baseUrl}}/institute/courses
+Content-Type: application/json
+
+{
+  "instituteId": "{{instituteId}}",
+  "name": "Computer Science",
+  "faculty": "Faculty of Technology",
+  "duration": 3,
+  "requirements": "High School Diploma with Math",
+  "description": "Fundamentals of computing and programming",
+  "tuitionFee": 12000,
+  "capacity": 40
+}
+
+### 5. CREATE JOB FOR COMPANY
+### Post Job
+# @name postJob
+POST {{baseUrl}}/company/jobs
+Content-Type: application/json
+
+{
+  "companyId": "{{companyId}}",
+  "title": "Junior Developer",
+  "department": "IT",
+  "location": "Maseru, Lesotho",
+  "salary": "M10,000 - M15,000",
+  "type": "full-time",
+  "description": "We are looking for a junior developer to join our team...",
+  "requirements": ["Basic programming knowledge", "Willingness to learn", "Good communication skills"],
+  "qualifications": ["Diploma/Degree in IT field", "0-1 years experience"],
+  "deadline": "2024-12-31"
+}
+
+### 6. EXTRACT COURSE AND JOB IDs
+@courseId = {{addCourse1.response.body.$.courseId}}
+@jobId = {{postJob.response.body.$.jobId}}
+
+### 7. NOW TEST ALL ROUTES WITH CREATED DATA
+
+### PUBLIC ROUTES
+### Get All Institutions (Should show Test University)
+GET {{baseUrl}}/institutions
+
+### Get Courses for Institution
+GET {{baseUrl}}/institutions/{{instituteId}}/courses
+
+### STUDENT ROUTES
+### Get Student Profile
+GET {{baseUrl}}/students/profile/{{studentId}}
+Authorization: Bearer demo-token-{{studentId}}
+
+### Update Student Profile
+PATCH {{baseUrl}}/students/profile/{{studentId}}
+Authorization: Bearer demo-token-{{studentId}}
+Content-Type: application/json
+
+{
+  "phone": "9876543210",
+  "address": "456 Updated Street, Maseru",
+  "highSchool": "Maseru High School",
+  "graduationYear": "2023"
+}
+
+### Apply for Course
+# @name applyCourse
+POST {{baseUrl}}/students/apply
+Authorization: Bearer demo-token-{{studentId}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "institutionId": "{{instituteId}}",
+  "courseId": "{{courseId}}"
+}
+
+### Get Application ID
+@applicationId = {{applyCourse.response.body.$.applicationId}}
+
+### Get Student Applications
+GET {{baseUrl}}/students/applications/{{studentId}}
+Authorization: Bearer demo-token-{{studentId}}
+
+### Upload Transcript
+POST {{baseUrl}}/students/uploadTranscript
+Authorization: Bearer demo-token-{{studentId}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "transcriptUrl": "https://example.com/transcripts/student_transcript.pdf"
+}
+
+### Get Job Recommendations
+GET {{baseUrl}}/students/jobs/{{studentId}}
+Authorization: Bearer demo-token-{{studentId}}
+
+### Apply for Job
+POST {{baseUrl}}/students/apply-job
+Authorization: Bearer demo-token-{{studentId}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "jobId": "{{jobId}}"
+}
+
+### INSTITUTION ROUTES
+### Get Institution Profile
+GET {{baseUrl}}/institute/profile/{{instituteId}}
+Authorization: Bearer demo-token-{{instituteId}}
+
+### Get Institution Applications (Should show student's application)
+GET {{baseUrl}}/institute/applications/{{instituteId}}
+Authorization: Bearer demo-token-{{instituteId}}
+
+### Update Application Status (Admit the student)
+PUT {{baseUrl}}/institute/applications/{{applicationId}}
+Authorization: Bearer demo-token-{{instituteId}}
+Content-Type: application/json
+
+{
+  "status": "admitted"
+}
+
+### Get Admitted Students (Should show the admitted student)
+GET {{baseUrl}}/institute/admissions/{{instituteId}}
+Authorization: Bearer demo-token-{{instituteId}}
+
+### COMPANY ROUTES
+### Get Company Profile
+GET {{baseUrl}}/company/profile/{{companyId}}
+Authorization: Bearer demo-token-{{companyId}}
+
+### Get Company Jobs
+GET {{baseUrl}}/company/jobs/{{companyId}}
+Authorization: Bearer demo-token-{{companyId}}
+
+### Get Job Applications (Should show student's job application)
+GET {{baseUrl}}/company/applications/{{companyId}}
+Authorization: Bearer demo-token-{{companyId}}
+
+### Get Qualified Candidates
+GET {{baseUrl}}/company/qualified-candidates
+Authorization: Bearer demo-token-{{companyId}}
+
+### ADMIN ROUTES
+### Get All Institutions (Admin)
+GET {{baseUrl}}/admin/institutions
+Authorization: Bearer demo-token-admin
+
+### Get All Companies (Admin)
+GET {{baseUrl}}/admin/companies
+Authorization: Bearer demo-token-admin
+
+### Get System Reports (Admin)
+GET {{baseUrl}}/admin/reports
+Authorization: Bearer demo-token-admin
+
+### Get Dashboard Stats (Admin)
+GET {{baseUrl}}/admin/dashboard-stats
+Authorization: Bearer demo-token-admin
+
+### 8. CLEANUP (Optional - if you want to delete test data)
+### Withdraw Application
+DELETE {{baseUrl}}/students/applications/{{applicationId}}
+Authorization: Bearer demo-token-{{studentId}}
