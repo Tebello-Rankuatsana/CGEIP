@@ -19,7 +19,7 @@ Content-Type: application/json
 
 {
   "name": "Rankuatsana",
-  "email": "ranks@example.com",
+  "email": "ranks2@example.com",
   "password": "hello2468"
 }
 ###Testing company registration
