@@ -3,6 +3,8 @@ const app = express();
 import cors from 'cors';
 import 'dotenv/config.js';
 
+
+
 import studentRoutes from "./routes/studentRoutes.js";
 import institutionRoutes from "./routes/institutionRoutes.js";
 import companyRoutes from "./routes/companyRoutes.js";

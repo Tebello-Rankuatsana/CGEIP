@@ -50,12 +50,60 @@ function StudentLayout({ children }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             {[
-              { path: '/student', icon: '🏠', label: 'Dashboard' },
-              { path: '/student/institutions', icon: '🏛️', label: 'Institutions & Courses' },
-              { path: '/student/applications', icon: '📄', label: 'My Applications' },
-              { path: '/student/jobs', icon: '💼', label: 'Job Opportunities' },
-              { path: '/student/transcript', icon: '📊', label: 'Upload Transcript' },
-              { path: '/student/profile', icon: '👤', label: 'Profile' }
+              { 
+                path: '/student', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13,3V9H21V3M13,21H21V11H13M3,21H11V15H3M3,13H11V3H3V13Z" />
+                  </svg>
+                ), 
+                label: 'Dashboard' 
+              },
+              { 
+                path: '/student/institutions', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,3L1,9L12,15L21,10.09V17H23V9M5,13.18V17.18C5,17.18 8,16 12,16C16,16 19,17.18 19,17.18V13.18L12,17L5,13.18Z" />
+                  </svg>
+                ), 
+                label: 'Institutions & Courses' 
+              },
+              { 
+                path: '/student/applications', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+                  </svg>
+                ), 
+                label: 'My Applications' 
+              },
+              { 
+                path: '/student/jobs', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10,2H14A2,2 0 0,1 16,4V6H20A2,2 0 0,1 22,8V19A2,2 0 0,1 20,21H4C2.89,21 2,20.1 2,19V8C2,6.89 2.89,6 4,6H8V4C8,2.89 8.89,2 10,2M14,6V4H10V6H14Z" />
+                  </svg>
+                ), 
+                label: 'Job Opportunities' 
+              },
+              { 
+                path: '/student/transcript', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z" />
+                  </svg>
+                ), 
+                label: 'Upload Transcript' 
+              },
+              { 
+                path: '/student/profile', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
+                  </svg>
+                ), 
+                label: 'Profile' 
+              }
             ].map((item) => {
               const isActive = location.pathname === item.path || 
                 (item.path !== '/student' && location.pathname.includes(item.path.replace('/student/', '')));
@@ -78,7 +126,7 @@ function StudentLayout({ children }) {
                     }
                   }}
                 >
-                  <span style={{ marginRight: '0.5rem' }}>{item.icon}</span>
+                  {item.icon}
                   {item.label}
                 </Link>
               );
@@ -586,7 +634,9 @@ function InstitutionsAndCourses() {
               
               {courses.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#6b7280' }}>
-                  <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📚</div>
+                  <svg style={{ width: '3rem', height: '3rem', fill: '#6b7280', marginBottom: '1rem' }} viewBox="0 0 24 24">
+                    <path d="M12,3L1,9L12,15L21,10.09V17H23V9M5,13.18V17.18C5,17.18 8,16 12,16C16,16 19,17.18 19,17.18V13.18L12,17L5,13.18Z" />
+                  </svg>
                   <p style={{ margin: '0 0 1rem 0' }}>No courses available for this institution</p>
                 </div>
               ) : (
@@ -654,7 +704,9 @@ function InstitutionsAndCourses() {
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#6b7280' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🏛️</div>
+              <svg style={{ width: '3rem', height: '3rem', fill: '#6b7280', marginBottom: '1rem' }} viewBox="0 0 24 24">
+                <path d="M18,15A4,4 0 0,1 22,19A4,4 0 0,1 18,23A4,4 0 0,1 14,19A4,4 0 0,1 18,15M18,17A2,2 0 0,0 16,19A2,2 0 0,0 18,21A2,2 0 0,0 20,19A2,2 0 0,0 18,17M6.05,14.54C6.05,14.54 7.46,13.12 7.47,10.3C7.11,8.11 7.97,5.54 9.94,3.58C12.87,0.65 17.14,0.17 19.5,2.5C21.83,4.86 21.35,9.13 18.42,12.06C16.46,14.03 13.89,14.89 11.7,14.53C8.88,14.54 7.46,15.95 7.46,15.95L3.22,20.19L1.81,18.78L6.05,14.54M18.07,3.93C16.5,2.37 13.5,2.84 11.35,5C9.21,7.14 8.73,10.15 10.29,11.71C11.86,13.27 14.86,12.79 17,10.65C19.16,8.5 19.63,5.5 18.07,3.93Z" />
+              </svg>
               <p style={{ margin: '0 0 1rem 0' }}>Select an institution to view available courses</p>
               <small style={{ color: '#6b7280' }}>15 institutions with courses available</small>
             </div>
@@ -781,7 +833,9 @@ function StudentApplications() {
 
       {applications.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#6b7280' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
+          <svg style={{ width: '3rem', height: '3rem', fill: '#6b7280', marginBottom: '1rem' }} viewBox="0 0 24 24">
+            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+          </svg>
           <p style={{ margin: '0 0 1.5rem 0' }}>No applications submitted yet</p>
           <Link 
             to="/student/institutions" 
@@ -851,7 +905,7 @@ function StudentApplications() {
 function JobOpportunities() {
   const [jobs, setJobs] = useState([]);
   const [appliedJobs, setAppliedJobs] = useState(new Set());
-  const [loading, setLoading] = useState(false);
+  const [loading,setLoading] = useState(false);
 
   // Hardcoded jobs data
   const hardcodedJobs = [
@@ -961,7 +1015,9 @@ function JobOpportunities() {
 
       {jobs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#6b7280' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>💼</div>
+          <svg style={{ width: '3rem', height: '3rem', fill: '#6b7280', marginBottom: '1rem' }} viewBox="0 0 24 24">
+            <path d="M10,2H14A2,2 0 0,1 16,4V6H20A2,2 0 0,1 22,8V19A2,2 0 0,1 20,21H4C2.89,21 2,20.1 2,19V8C2,6.89 2.89,6 4,6H8V4C8,2.89 8.89,2 10,2M14,6V4H10V6H14Z" />
+          </svg>
           <p style={{ margin: '0 0 1rem 0' }}>No job opportunities available at the moment</p>
         </div>
       ) : (
@@ -1058,7 +1114,6 @@ function UploadTranscript() {
       await axios.post('http://localhost:5001/api/student/uploadTranscript', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
         }
       });
 
@@ -1440,7 +1495,9 @@ function StudentProfile() {
         <div style={cardStyle}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: '1rem' }}>
-              <div style={{ fontSize: '3rem' }}>👤</div>
+              <svg style={{ width: '3rem', height: '3rem', fill: '#40e0d0' }} viewBox="0 0 24 24">
+                <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
+              </svg>
             </div>
             <h5 style={{ color: '#000000', margin: '0 0 0.5rem 0' }}>{profile.name}</h5>
             <p style={{ color: '#6b7280', margin: '0 0 1rem 0' }}>{profile.email}</p>

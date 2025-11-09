@@ -28,13 +28,13 @@ function Footer() {
               fontWeight: 'bold',
               marginBottom: '0.5rem'
             }}>
-              Career Guidance Platform
+              K&T Pathways
             </h5>
             <p style={{
               color: '#d1d5db',
               maxWidth: '400px'
             }}>
-              Connecting students with educational and career opportunities in Lesotho.
+              Find Your Path. Shape Your Future.
             </p>
           </div>
           <div style={{
@@ -44,7 +44,7 @@ function Footer() {
               color: '#9ca3af',
               fontSize: '0.875rem'
             }}>
-              &copy; 2024 Career Guidance Platform. All rights reserved.
+              &copy; 2025 K&T Pathways. All rights reserved.
             </p>
           </div>
         </div>

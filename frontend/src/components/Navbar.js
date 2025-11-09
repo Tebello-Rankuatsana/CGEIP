@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logo from '../k&t logo.png';
 
 function Navbar() {
   const { user, logout } = useAuth();
@@ -27,20 +28,8 @@ function Navbar() {
           alignItems: 'center',
           textDecoration: 'none'
         }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #40E0D0, #38c9b8)',
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginRight: '12px',
-            boxShadow: '0 4px 12px rgba(64, 224, 208, 0.3)'
-          }}>
-            <i className="bi bi-briefcase text-white"></i>
-          </div>
-          Career Guidance
+          <img src={logo} width={'80px'} height={'50px'} alt={''}/>
+          K&T Pathways
         </Link>
         
         {/* Mobile Toggle */}

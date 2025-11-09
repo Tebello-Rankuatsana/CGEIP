@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logo from '../k&t logo.png';
 
 function Login() {
   const [formData, setFormData] = useState({
@@ -65,7 +66,7 @@ function Login() {
           {/* Logo/Brand Section */}
           <div className="text-center mb-4">
             <div className="logo-container mb-3">
-              <div className="logo-icon" style={{
+              {/* <div className="logo-icon" style={{
                 width: '80px',
                 height: '80px',
                 background: 'linear-gradient(135deg, #40E0D0, #38c9b8)',
@@ -76,10 +77,9 @@ function Login() {
                 boxShadow: '0 8px 25px rgba(64, 224, 208, 0.3)'
               }}>
                 <i className="bi bi-briefcase text-white fs-2"></i>
-              </div>
+              </div> */}
+              <img src={logo} width={'80px'} height={'50px'} alt={''}/>
             </div>
-            <h1 className="text-white fw-bold mb-2">Career Guidance</h1>
-            <p className="text-turquoise mb-0">Lesotho Platform</p>
           </div>
 
           <div className="login-card" style={{
@@ -236,7 +236,7 @@ function Login() {
             {/* Footer */}
             <div className="text-center mt-4 pt-3" style={{ borderTop: '1px solid #e9ecef' }}>
               <small className="text-muted">
-                © 2024 Career Guidance Platform. All rights reserved.
+                © 2025 K&T Pathways. All rights reserved.
               </small>
             </div>
           </div>
