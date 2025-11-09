@@ -67,6 +67,8 @@ app.get("/api/company",(req, res) => {
 
 
 const port = process.env.PORT || 5001;
-app.listen(port, () => {
-  console.log(`backend is operational`);
-});
+// app.listen(port, () => {
+//   console.log(`backend is operational`);
+// });
+
+export default app;
