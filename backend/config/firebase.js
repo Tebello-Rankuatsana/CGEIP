@@ -1,8 +1,15 @@
 import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-// Use the environment variable instead of reading a file
-// Make sure you added FIREBASE_SERVICE_ACCOUNT in Render's environment variables
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Read the service account JSON from disk
+const serviceAccount = JSON.parse(
+  readFileSync(join(__dirname, 'serviceAccountKey.json'), 'utf-8')
+);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
