@@ -80,19 +80,10 @@ function AdminDashboardHome() {
   const fetchDashboardStats = async () => {
     try {
       const token = localStorage.getItem('token');
-      const [instRes, studentsRes, companiesRes, approvalsRes] = await Promise.all([
-        axios.get('http://localhost:5001/api/admin/institutions', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:5001/api/admin/students', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:5001/api/admin/companies', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:5001/api/admin/pending-approvals', { headers: { Authorization: `Bearer ${token}` } })
-      ]);
-
-      setStats({
-        totalInstitutions: instRes.data.length,
-        totalStudents: studentsRes.data.length,
-        totalCompanies: companiesRes.data.length,
-        pendingApprovals: approvalsRes.data.length
+      const response = await axios.get('http://localhost:5001/api/admin/dashboard-stats', {
+        headers: { Authorization: `Bearer ${token}` }
       });
+      setStats(response.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
@@ -288,7 +279,7 @@ function ManageInstitutions() {
     if (window.confirm('Are you sure you want to delete this institution?')) {
       try {
         const token = localStorage.getItem('token');
-        await axios.delete(`http://localhost:5000/api/admin/institutions/${id}`, {
+        await axios.delete(`http://localhost:5001/api/admin/institutions/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         alert('Institution deleted successfully!');
@@ -482,7 +473,7 @@ function ManageCompanies() {
   const fetchCompanies = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/companies', {
+      const response = await axios.get('http://localhost:5001/api/admin/companies', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCompanies(response.data);
@@ -496,7 +487,7 @@ function ManageCompanies() {
   const handleApproveCompany = async (companyId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/admin/companies/${companyId}/approve`, {}, {
+      await axios.put(`http://localhost:5001/api/admin/companies/${companyId}/approve`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Company approved successfully!');
@@ -510,7 +501,7 @@ function ManageCompanies() {
   const handleSuspendCompany = async (companyId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/admin/companies/${companyId}/suspend`, {}, {
+      await axios.put(`http://localhost:5001/api/admin/companies/${companyId}/suspend`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Company suspended successfully!');
@@ -525,7 +516,7 @@ function ManageCompanies() {
     if (window.confirm('Are you sure you want to delete this company?')) {
       try {
         const token = localStorage.getItem('token');
-        await axios.delete(`http://localhost:5000/api/admin/companies/${companyId}`, {
+        await axios.delete(`http://localhost:5001/api/admin/companies/${companyId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         alert('Company deleted successfully!');
@@ -626,7 +617,7 @@ function Reports() {
   const fetchReports = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/admin/reports', {
+      const response = await axios.get('http://localhost:5001/api/admin/reports', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setReports(response.data);

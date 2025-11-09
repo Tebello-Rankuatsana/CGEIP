@@ -1,8 +1,6 @@
 ### Base URL
 @baseUrl = http://localhost:5001/api
 
-### 1. HEALTH CHECK
-GET {{baseUrl}}/health
 
 ### 2. CREATE TEST DATA
 ### Register Student
@@ -19,6 +17,20 @@ Content-Type: application/json
   "dateOfBirth": "2000-01-01",
   "address": "123 Test Street, Maseru"
 }
+### Register Student ver two
+# @name registerStudent
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Pablo Escobar",
+  "email": "esco@email.com",
+  "password": "booger123",
+  "role": "student",
+  "phone": "2345678910",
+  "dateOfBirth": "2000-01-01",
+  "address": "Rionegro, Colombia"
+}
 
 ### Register Institution
 # @name registerInstitution
@@ -26,14 +38,14 @@ POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-  "name": "Test University",
-  "email": "testuniversity@email.com",
-  "password": "password123",
+  "name": "Ranks3 University",
+  "email": "ru3@email.com",
+  "password": "ranks1234",
   "role": "institute",
   "contactPerson": "Test Director",
   "phone": "9876543210",
-  "address": "456 University Road, Lesotho",
-  "website": "https://testuniversity.edu.ls"
+  "address": "Maseru, Lesotho",
+  "website": "https://ranksuniversity.edu.ls"
 }
 
 ### Register Company
@@ -75,13 +87,13 @@ Content-Type: application/json
 
 {
   "instituteId": "{{instituteId}}",
-  "name": "Software Engineering",
+  "name": "Business Information Technology",
   "faculty": "Faculty of Technology",
   "duration": 4,
-  "requirements": "High School Diploma with Math and Science",
-  "description": "Learn software development, algorithms, and system design",
+  "requirements": "High School Diploma with Math and Business Studies",
+  "description": "Learn software development, business, and system design",
   "tuitionFee": 15000,
-  "capacity": 50
+  "capacity": 40
 }
 
 ### Add Course 2
@@ -252,3 +264,12 @@ Authorization: Bearer demo-token-admin
 ### Withdraw Application
 DELETE {{baseUrl}}/students/applications/{{applicationId}}
 Authorization: Bearer demo-token-{{studentId}}
+###create new admin user
+POST http://localhost:5001/api/admin/create-admin
+Content-Type: application/json
+
+{
+  "name": "System Administrator",
+  "email": "admin@careerguidance.ls",
+  "password": "Admin123!"
+}

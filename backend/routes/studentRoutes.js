@@ -56,9 +56,43 @@ router.post("/register", async (req, res) => {
 
 // Student login
 router.post("/login", async (req, res) => {
-  res.status(501).json({
-    message: "Login should be handled on the frontend using Firebase Authentication.",
-  });
+  try {
+    const { email, password } = req.body;
+
+    // Sign in with Firebase Auth
+    const userCredential = await auth.signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // Get custom token for your app
+    const token = await auth.createCustomToken(user.uid);
+
+    // Get student data from Firestore
+    const studentDoc = await db.collection("students").doc(user.uid).get();
+    
+    if (!studentDoc.exists) {
+      return res.status(404).json({ error: "Student profile not found" });
+    }
+
+    const studentData = studentDoc.data();
+
+    res.status(200).json({
+      success: true,
+      message: "Login successful!",
+      user: {
+        uid: user.uid,
+        email: user.email,
+        role: 'student',
+        ...studentData
+      },
+      token: token
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(401).json({
+      success: false,
+      message: "Invalid email or password"
+    });
+  }
 });
 
 // Get student profile

@@ -305,7 +305,6 @@ function ManageFaculties() {
                 <tr>
                   <th>Faculty Name</th>
                   <th>Description</th>
-                  <th>Number of Courses</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -314,9 +313,6 @@ function ManageFaculties() {
                   <tr key={faculty.id}>
                     <td>{faculty.name}</td>
                     <td>{faculty.description}</td>
-                    <td>
-                      <span className="badge bg-primary">{faculty.courseCount || 0}</span>
-                    </td>
                     <td>
                       <button 
                         className="btn btn-sm btn-outline-danger"
@@ -589,7 +585,6 @@ function ManageCourses() {
                   <th>Duration</th>
                   <th>Tuition Fee</th>
                   <th>Capacity</th>
-                  <th>Applications</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -601,9 +596,6 @@ function ManageCourses() {
                     <td>{course.duration} years</td>
                     <td>M{course.tuitionFee}</td>
                     <td>{course.capacity}</td>
-                    <td>
-                      <span className="badge bg-primary">{course.applicationCount || 0}</span>
-                    </td>
                     <td>
                       <button 
                         className="btn btn-sm btn-outline-primary me-1"
@@ -875,7 +867,7 @@ function InstituteProfile() {
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.put('http://localhost:5001/api/institute/profile', profile, {
+      await axios.patch('http://localhost:5001/api/institute/profile', profile, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert('Profile updated successfully!');
@@ -999,7 +991,7 @@ function InstituteProfile() {
               <h5>{profile.name}</h5>
               <p className="text-muted">{profile.email}</p>
               <div className="mt-3">
-                <small className="text-muted">Institution ID: {user?.id}</small>
+                <small className="text-muted">Institution ID: {user?.uid}</small>
               </div>
             </div>
           </div>

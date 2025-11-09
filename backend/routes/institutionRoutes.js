@@ -19,9 +19,9 @@ const authenticateToken = async (req, res, next) => {
 };
 
 // Get institution profile
-router.get("/profile/:instituteId", authenticateToken, async (req, res) => {
+router.get("/profile", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.params;
+    const instituteId = req.user.uid;
     const instituteDoc = await db.collection("institutions").doc(instituteId).get();
     
     if (!instituteDoc.exists) {
@@ -35,9 +35,9 @@ router.get("/profile/:instituteId", authenticateToken, async (req, res) => {
 });
 
 // Update institution profile
-router.patch("/profile/:instituteId", authenticateToken, async (req, res) => {
+router.patch("/profile", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.params;
+    const instituteId = req.user.uid;
     const updates = req.body;
 
     await db.collection("institutions").doc(instituteId).update({
@@ -52,9 +52,9 @@ router.patch("/profile/:instituteId", authenticateToken, async (req, res) => {
 });
 
 // Get institution's faculties
-router.get("/faculties/:instituteId", authenticateToken, async (req, res) => {
+router.get("/faculties", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.params;
+    const instituteId = req.user.uid;
     const facultiesSnap = await db.collection("faculties")
       .where("institutionId", "==", instituteId)
       .get();
@@ -71,7 +71,8 @@ router.get("/faculties/:instituteId", authenticateToken, async (req, res) => {
 // Add faculty
 router.post("/faculties", authenticateToken, async (req, res) => {
   try {
-    const { instituteId, name, description } = req.body;
+    const instituteId = req.user.uid;
+    const { name, description } = req.body;
 
     const facultyData = {
       institutionId: instituteId,
@@ -105,9 +106,9 @@ router.delete("/faculties/:facultyId", authenticateToken, async (req, res) => {
 });
 
 // Get institution's courses
-router.get("/courses/:instituteId", authenticateToken, async (req, res) => {
+router.get("/courses", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.params;
+    const instituteId = req.user.uid;
     const coursesSnap = await db.collection("courses")
       .where("institutionId", "==", instituteId)
       .get();
@@ -124,7 +125,8 @@ router.get("/courses/:instituteId", authenticateToken, async (req, res) => {
 // Add course
 router.post("/courses", authenticateToken, async (req, res) => {
   try {
-    const { instituteId, name, faculty, duration, requirements, description, tuitionFee, capacity } = req.body;
+    const instituteId = req.user.uid;
+    const { name, faculty, duration, requirements, description, tuitionFee, capacity } = req.body;
 
     const courseData = {
       institutionId: instituteId,
@@ -180,9 +182,9 @@ router.delete("/courses/:courseId", authenticateToken, async (req, res) => {
 });
 
 // Get applications for institution
-router.get("/applications/:instituteId", authenticateToken, async (req, res) => {
+router.get("/applications", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.params;
+    const instituteId = req.user.uid;
     
     const applicationsSnap = await db.collection("applications")
       .where("institutionId", "==", instituteId)
@@ -254,9 +256,9 @@ router.put("/applications/:applicationId", authenticateToken, async (req, res) =
 });
 
 // Get admitted students
-router.get("/admissions/:instituteId", authenticateToken, async (req, res) => {
+router.get("/admissions", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.params;
+    const instituteId = req.user.uid;
     
     const admissionsSnap = await db.collection("applications")
       .where("institutionId", "==", instituteId)
@@ -294,7 +296,7 @@ router.get("/admissions/:instituteId", authenticateToken, async (req, res) => {
 // Publish admissions
 router.post("/publish-admissions", authenticateToken, async (req, res) => {
   try {
-    const { instituteId } = req.body;
+    const instituteId = req.user.uid;
     
     // Get all pending applications and set them to waiting if not admitted
     const pendingApps = await db.collection("applications")

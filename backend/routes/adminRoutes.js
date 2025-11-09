@@ -24,6 +24,37 @@ const requireAdmin = (req, res, next) => {
   // For now, we'll assume all authenticated users can access admin routes
   next();
 };
+// Temporary admin creation route(only for development/testing)
+router.post("/create-admin", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Create user in Firebase Authentication
+    const user = await auth.createUser({
+      email,
+      password,
+      displayName: name,
+    });
+
+    // Create admin profile in Firestore
+    await db.collection("admins").doc(user.uid).set({
+      name,
+      email,
+      role: "admin",
+      createdAt: new Date(),
+      permissions: ["all"]
+    });
+
+    res.status(201).json({
+      message: "Admin created successfully!",
+      adminId: user.uid,
+      email: email,
+      password: password // Only for development - remove in production
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 // Get all institutions
 router.get("/institutions", authenticateToken, requireAdmin, async (req, res) => {
