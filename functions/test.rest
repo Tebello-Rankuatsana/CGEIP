@@ -1,0 +1,70 @@
+# POST http://localhost:5001/api/student/register
+
+
+## get all students
+GET http://localhost:5001/api/student  
+
+###Testing adding an institution
+POST http://localhost:5001/api/admin/addInstitution
+Content-Type: application/json
+
+{
+  "name": "National University of Lesotho",
+  "description": "A top university in Lesotho"
+}
+
+###Testing student registration
+POST http://localhost:5001/api/student/register
+Content-Type: application/json
+
+{
+  "name": "Rankuatsana",
+  "email": "ranks2@example.com",
+  "password": "hello2468"
+}
+###Testing company registration
+POST http://localhost:5001/api/company/register
+Content-Type: application/json
+
+{
+  "name": "Tech Solutions",
+  "email": "tch@gmail.com",
+  "password": "tech1234" 
+}
+
+###Testing institute registration
+POST http://localhost:5001/api/institute/register   
+Content-Type: application/json
+
+{
+  "name": "Global Tech Institute comp two",
+  "email": "gtc@gmail.com",
+  "password": "global1234" 
+}
+
+###Testing admin registration
+POST http://localhost:5001/api/admin/register  
+Content-Type: application/json
+
+{
+  "name": "Admin User2",
+  "email": "ad1@gmail.com",
+  "password": "admin1234"
+}
+
+### Base URL
+@baseUrl = http://localhost:5001/api
+
+### TEST STUDENT REGISTRATION
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Sadam Hussein",
+  "email": "sadam@student.com",
+  "password": "nineeleven",
+  "role": "student",
+  "phone": "2468101214",
+  "dateOfBirth": "2000-01-01",
+  "address": "Ha Matala, Maseru"
+}
