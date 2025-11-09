@@ -68,5 +68,5 @@ app.get("/api/company",(req, res) => {
 
 const port = process.env.PORT || 5001;
 app.listen(port, () => {
-  console.log(`backend is running on port ${port}`);
+  console.log(`backend is operational`);
 });
