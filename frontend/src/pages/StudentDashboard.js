@@ -1099,7 +1099,7 @@ function UploadTranscript() {
 
   const handleUpload = async () => {
     if (!transcript) {
-      alert('Please select a file to upload');
+      alert('select a file to upload');
       return;
     }
 
