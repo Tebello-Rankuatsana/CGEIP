@@ -64,7 +64,9 @@ app.get("/api/institute",(req, res) => {
 app.get("/api/company",(req, res) => {
   res.status(200).json({ message: "Route found" });
 });
-
+app.get("/api/auth",(req, res) => {
+  res.status(200).json({ message: "Route found" });
+});
 
 const port = process.env.PORT || 5001;
 // app.listen(port, () => {
