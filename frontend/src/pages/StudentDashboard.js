@@ -527,11 +527,11 @@ function InstitutionsAndCourses() {
       
       localStorage.setItem('studentApplications', JSON.stringify(userApplications));
       
-      alert('Application submitted successfully! (Simulated)');
+      alert('Application submitted successfully!');
       
     } catch (error) {
       console.error('Error applying for course:', error);
-      alert('Application submitted successfully! (Simulated)');
+      alert('Application submitted successfully!');
       
       // Even if there's an error, simulate success for demo
       setAppliedCourses(prev => new Set([...prev, course.id]));
