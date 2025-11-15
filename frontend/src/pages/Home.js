@@ -24,7 +24,7 @@ function Home() {
                 marginBottom: '1rem',
                 color: '#40e0d0'
               }}>
-                Career Guidance & Employment Platform
+                K&T Pathways Career Guidance & Employment Platform
               </h1>
               <p style={{
                 fontSize: '1.25rem',
@@ -32,8 +32,7 @@ function Home() {
                 color: '#d1d5db',
                 lineHeight: '1.6'
               }}>
-                Discover higher learning institutions in Lesotho, apply for courses, 
-                and kickstart your career with employment opportunities.
+                Reach your full potential with K&T Pathways.
               </p>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <Link 

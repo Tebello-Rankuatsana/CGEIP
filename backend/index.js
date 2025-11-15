@@ -17,7 +17,7 @@ app.use(express.json());
 
 
 app.get('/', (req, res) => {
-  res.send('<h1>Backend is running.<h1>');
+  res.send('<h1>We Are Operational.<h1>');
 });
 
 app.use("/api/student", studentRoutes);
@@ -65,6 +65,9 @@ app.get("/api/company",(req, res) => {
   res.status(200).json({ message: "Route found" });
 });
 app.get("/api/auth",(req, res) => {
+  res.status(200).json({ message: "Route found" });
+});
+app.get("/api/company",(req, res) => {
   res.status(200).json({ message: "Route found" });
 });
 
