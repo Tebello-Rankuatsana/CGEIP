@@ -41,7 +41,6 @@ function StudentLayout({ children }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Sidebar */}
       <div style={sidebarStyle}>
         <div style={{ padding: '1.5rem 1rem', position: 'sticky', top: 0 }}>
           <div style={{ textAlign: 'center', marginBottom: '2rem', paddingBottom: '1rem', borderBottom: '1px solid #374151' }}>
