@@ -10,7 +10,7 @@ import institutionRoutes from "./routes/institutionRoutes.js";
 import companyRoutes from "./routes/companyRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-
+import notificationRoutes from './routes/notifications.js';
 
 app.use(cors());
 app.use(express.json());
@@ -26,6 +26,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/institute", institutionRoutes);
 app.use("/api/company", companyRoutes);
 app.use("/api/auth", authRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 
 app.get("/api/institutions", async (req, res) => {
