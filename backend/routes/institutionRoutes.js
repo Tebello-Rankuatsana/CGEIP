@@ -1,5 +1,6 @@
 import express from "express";
 import { db, auth } from "../config/firebase.js";
+import { createNotification } from "./notifications.js";
 
 const router = express.Router();
 
@@ -182,72 +183,69 @@ router.delete("/courses/:courseId", authenticateToken, async (req, res) => {
 });
 
 // Get applications for institution
-router.get("/applications", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    
-    const applicationsSnap = await db.collection("applications")
-      .where("institutionId", "==", instituteId)
-      .get();
-
-    const applications = [];
-    
-    for (const doc of applicationsSnap.docs) {
-      const application = { id: doc.id, ...doc.data() };
-      
-      // Get student details
-      const studentDoc = await db.collection("students").doc(application.studentId).get();
-      if (studentDoc.exists) {
-        application.studentName = studentDoc.data().name;
-        application.studentEmail = studentDoc.data().email;
-        application.studentPhone = studentDoc.data().phone;
-      }
-      
-      // Get course details
-      const courseDoc = await db.collection("courses").doc(application.courseId).get();
-      if (courseDoc.exists) {
-        application.courseName = courseDoc.data().name;
-        application.courseFaculty = courseDoc.data().faculty;
-      }
-      
-      applications.push(application);
-    }
-    
-    res.status(200).json(applications);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update application status
 router.put("/applications/:applicationId", authenticateToken, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const { status } = req.body;
 
-    // Check if student is already admitted elsewhere
+    // Get application details first
+    const applicationDoc = await db.collection("applications").doc(applicationId).get();
+    if (!applicationDoc.exists) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+
+    const application = applicationDoc.data();
+
+    // Check if student is already admitted elsewhere in this institution
     if (status === 'admitted') {
-      const applicationDoc = await db.collection("applications").doc(applicationId).get();
-      const applicationData = applicationDoc.data();
-      
-      // Check if student has other admitted applications
       const otherAdmissions = await db.collection("applications")
-        .where("studentId", "==", applicationData.studentId)
+        .where("studentId", "==", application.studentId)
+        .where("institutionId", "==", application.institutionId)
         .where("status", "==", "admitted")
         .get();
 
       if (!otherAdmissions.empty) {
         return res.status(400).json({ 
-          error: "Student already admitted to another institution. Please wait for student to choose." 
+          error: "Student is already admitted to another program at this institution." 
         });
       }
     }
 
+    // Update application status
     await db.collection("applications").doc(applicationId).update({
       status,
       updatedAt: new Date(),
       ...(status === 'admitted' && { admittedAt: new Date() })
     });
+
+    // Create notification for student
+    let notificationTitle, notificationMessage;
+    
+    switch (status) {
+      case 'admitted':
+        notificationTitle = "🎉 Admission Offer!";
+        notificationMessage = `Congratulations! You have been admitted to ${application.courseName} at ${application.institutionName}`;
+        break;
+      case 'rejected':
+        notificationTitle = "Application Update";
+        notificationMessage = `Your application to ${application.courseName} at ${application.institutionName} has been reviewed`;
+        break;
+      case 'waiting':
+        notificationTitle = "Application Waitlisted";
+        notificationMessage = `Your application to ${application.courseName} has been placed on waitlist`;
+        break;
+      default:
+        notificationTitle = "Application Status Updated";
+        notificationMessage = `Your application status has been updated to ${status}`;
+    }
+
+    await createNotification(
+      application.studentId,
+      notificationTitle,
+      notificationMessage,
+      status === 'admitted' ? 'success' : 'info',
+      '/student/applications'
+    );
 
     res.status(200).json({ message: `Application ${status} successfully!` });
   } catch (error) {
@@ -255,50 +253,34 @@ router.put("/applications/:applicationId", authenticateToken, async (req, res) =
   }
 });
 
-// Get admitted students
-router.get("/admissions", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    
-    const admissionsSnap = await db.collection("applications")
-      .where("institutionId", "==", instituteId)
-      .where("status", "==", "admitted")
-      .get();
-
-    const admissions = [];
-    
-    for (const doc of admissionsSnap.docs) {
-      const admission = { id: doc.id, ...doc.data() };
-      
-      // Get student details
-      const studentDoc = await db.collection("students").doc(admission.studentId).get();
-      if (studentDoc.exists) {
-        admission.studentName = studentDoc.data().name;
-        admission.studentEmail = studentDoc.data().email;
-        admission.studentPhone = studentDoc.data().phone;
-      }
-      
-      // Get course details
-      const courseDoc = await db.collection("courses").doc(admission.courseId).get();
-      if (courseDoc.exists) {
-        admission.courseName = courseDoc.data().name;
-      }
-      
-      admissions.push(admission);
-    }
-    
-    res.status(200).json(admissions);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Publish admissions
+// Enhanced Publish admissions with notifications
 router.post("/publish-admissions", authenticateToken, async (req, res) => {
   try {
     const instituteId = req.user.uid;
     
-    // Get all pending applications and set them to waiting if not admitted
+    // Get institution details
+    const instituteDoc = await db.collection("institutions").doc(instituteId).get();
+    const instituteName = instituteDoc.exists ? instituteDoc.data().name : "Institution";
+
+    // Get all admitted students to notify them
+    const admittedStudents = await db.collection("applications")
+      .where("institutionId", "==", instituteId)
+      .where("status", "==", "admitted")
+      .get();
+
+    // Create notifications for admitted students
+    for (const doc of admittedStudents.docs) {
+      const application = doc.data();
+      await createNotification(
+        application.studentId,
+        "📢 Admissions Published!",
+        `Admission results have been published by ${instituteName}. Check your application status now!`,
+        'info',
+        '/student/applications'
+      );
+    }
+
+    // Update pending applications to waiting
     const pendingApps = await db.collection("applications")
       .where("institutionId", "==", instituteId)
       .where("status", "==", "pending")
@@ -317,7 +299,98 @@ router.post("/publish-admissions", authenticateToken, async (req, res) => {
     
     res.status(200).json({ 
       message: "Admissions published successfully! Students have been notified.",
-      updated: pendingApps.size
+      admitted: admittedStudents.size,
+      waitlisted: pendingApps.size
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// New route: Student accepts admission offer
+router.post("/admissions/accept", authenticateToken, async (req, res) => {
+  try {
+    const { applicationId } = req.body;
+    const studentId = req.user.uid; // Assuming student is making this request
+
+    // Get the application
+    const applicationDoc = await db.collection("applications").doc(applicationId).get();
+    if (!applicationDoc.exists) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+
+    const application = applicationDoc.data();
+
+    // Verify student owns this application
+    if (application.studentId !== studentId) {
+      return res.status(403).json({ error: "Not authorized to accept this offer" });
+    }
+
+    // Check if already admitted
+    if (application.status !== 'admitted') {
+      return res.status(400).json({ error: "Application is not admitted" });
+    }
+
+    // Get all other admitted applications for this student
+    const otherAdmittedApps = await db.collection("applications")
+      .where("studentId", "==", studentId)
+      .where("status", "==", "admitted")
+      .where("id", "!=", applicationId)
+      .get();
+
+    const batch = db.batch();
+    
+    // Confirm the selected application
+    batch.update(db.collection("applications").doc(applicationId), { 
+      status: 'confirmed', 
+      confirmedAt: new Date() 
+    });
+
+    // Decline all other admitted applications and move waitlist
+    for (const doc of otherAdmittedApps.docs) {
+      const otherApp = doc.data();
+      
+      // Update status to declined
+      batch.update(doc.ref, { status: 'declined', declinedAt: new Date() });
+      
+      // Move first student from waitlist to admitted for each declined application
+      const waitlistSnap = await db.collection("applications")
+        .where("courseId", "==", otherApp.courseId)
+        .where("status", "==", "waiting")
+        .orderBy("appliedAt", "asc")
+        .limit(1)
+        .get();
+
+      if (!waitlistSnap.empty) {
+        const firstWaitlist = waitlistSnap.docs[0];
+        batch.update(firstWaitlist.ref, { status: 'admitted', admittedAt: new Date() });
+        
+        // Create notification for waitlisted student
+        await createNotification(
+          firstWaitlist.data().studentId,
+          "🎉 Admission from Waitlist!",
+          `You have been admitted to ${otherApp.courseName} at ${otherApp.institutionName} from the waitlist!`,
+          'success',
+          '/student/applications'
+        );
+      }
+    }
+
+    await batch.commit();
+
+    // Create notification for the student
+    await createNotification(
+      studentId,
+      "✅ Admission Confirmed!",
+      `You have confirmed your admission to ${application.courseName} at ${application.institutionName}. Welcome!`,
+      'success',
+      '/student/applications'
+    );
+
+    res.status(200).json({ 
+      message: "Admission accepted successfully!",
+      confirmedCourse: application.courseName,
+      declinedCount: otherAdmittedApps.size
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
