@@ -7,6 +7,7 @@ import axios from 'axios';
 function StudentLayout({ children }) {
   const location = useLocation();
   const { user } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const sidebarStyle = {
     backgroundColor: '#000000',
@@ -102,6 +103,15 @@ function StudentLayout({ children }) {
                   </svg>
                 ), 
                 label: 'Profile' 
+              },
+              {
+                path: '/student/notifications', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10,21H14A2,2 0 0,1 12,23A2,2 0 0,1 10,21M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19Z" />
+                  </svg>
+                ), 
+                label: `Notifications ${unreadCount > 0 ? `(${unreadCount})` : ''}` 
               }
             ].map((item) => {
               const isActive = location.pathname === item.path || 
@@ -1509,6 +1519,134 @@ function StudentProfile() {
     </div>
   );
 }
+// Student Notifications Component
+function StudentNotifications() {
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    }
+  }, [user]);
+
+  const fetchNotifications = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://localhost:5001/api/notifications/${user?.uid}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setNotifications(response.data);
+      setUnreadCount(response.data.filter(n => !n.isRead).length);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  const markAsRead = async (notificationId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(`http://localhost:5001/api/notifications/${notificationId}/read`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setNotifications(prev => prev.map(n => 
+        n.id === notificationId ? { ...n, isRead: true } : n
+      ));
+      setUnreadCount(prev => prev - 1);
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  const cardStyle = {
+    backgroundColor: '#ffffff',
+    border: '2px solid #40e0d0',
+    borderRadius: '0.5rem',
+    padding: '1.5rem',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h2 style={{ color: '#000000', margin: 0 }}>Notifications</h2>
+        {unreadCount > 0 && (
+          <span style={{
+            backgroundColor: '#ef4444',
+            color: '#ffffff',
+            padding: '0.25rem 0.75rem',
+            borderRadius: '1rem',
+            fontSize: '0.875rem',
+            fontWeight: '600'
+          }}>
+            {unreadCount} unread
+          </span>
+        )}
+      </div>
+
+      <div style={cardStyle}>
+        {notifications.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>
+            <p>No notifications yet</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {notifications.map(notification => (
+              <div
+                key={notification.id}
+                style={{
+                  padding: '1rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.375rem',
+                  backgroundColor: notification.isRead ? '#ffffff' : '#f0f9ff',
+                  borderLeft: `4px solid ${
+                    notification.type === 'success' ? '#10b981' : 
+                    notification.type === 'warning' ? '#f59e0b' : 
+                    notification.type === 'error' ? '#ef4444' : '#3b82f6'
+                  }`
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <h6 style={{ margin: '0 0 0.5rem 0', color: '#000000' }}>
+                      {notification.title}
+                    </h6>
+                    <p style={{ margin: '0 0 0.5rem 0', color: '#4b5563' }}>
+                      {notification.message}
+                    </p>
+                    <small style={{ color: '#6b7280' }}>
+                      {new Date(notification.createdAt).toLocaleDateString()} at{' '}
+                      {new Date(notification.createdAt).toLocaleTimeString()}
+                    </small>
+                  </div>
+                  {!notification.isRead && (
+                    <button
+                      onClick={() => markAsRead(notification.id)}
+                      style={{
+                        backgroundColor: 'transparent',
+                        border: '1px solid #d1d5db',
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.75rem',
+                        color: '#6b7280',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Mark read
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Main Student Dashboard Component
 function StudentDashboard() {
@@ -1521,6 +1659,7 @@ function StudentDashboard() {
         <Route path="/jobs" element={<JobOpportunities />} />
         <Route path="/transcript" element={<UploadTranscript />} />
         <Route path="/profile" element={<StudentProfile />} />
+        <Route path="/notifications" element={<StudentNotifications />} />
       </Routes>
     </StudentLayout>
   );
