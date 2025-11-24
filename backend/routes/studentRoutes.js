@@ -1,8 +1,19 @@
 import express from "express";
-import { db, auth, storage } from "../config/firebase.js";
-import { createNotification } from "./notifications.js";
-import { collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch } from "firebase/firestore";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { db, auth } from "../config/firebase.js";
+import { createNotification } from "../utility/notifications.js";
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  writeBatch 
+} from "firebase/firestore";
 
 const router = express.Router();
 
@@ -13,11 +24,8 @@ const authenticateToken = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({ error: "Access token required" });
     }
-    
-    // For Firebase Admin SDK, you would verify the token here
-    // Since we're using client-side Firebase Auth, we'll trust the token for now
-    // In production, implement proper token verification with Firebase Admin
-    req.user = { uid: token }; // Simplified for demo
+    const decodedToken = await auth.verifyIdToken(token);
+    req.user = decodedToken;
     next();
   } catch (error) {
     return res.status(401).json({ error: "Invalid token" });
@@ -27,27 +35,29 @@ const authenticateToken = async (req, res, next) => {
 // Student registration
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, phone, dateOfBirth, address, highSchool, graduationYear } = req.body;
+    const { name, email, password } = req.body;
 
     // Create user in Firebase Authentication
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
+    const user = await auth.createUser({
+      email,
+      password,
+      displayName: name,
+    });
 
-    // Save student profile in Firestore
+    // Saving student profile in Firestore
     await setDoc(doc(db, "students", user.uid), {
       name,
       email,
-      phone: phone || "",
-      dateOfBirth: dateOfBirth || "",
-      address: address || "",
-      highSchool: highSchool || "",
-      graduationYear: graduationYear || "",
+      createdAt: new Date(),
       appliedCourses: [],
       status: "active",
-      createdAt: new Date(),
+      phone: "",
+      dateOfBirth: "",
+      address: "",
+      highSchool: "",
+      graduationYear: "",
       transcriptUrl: "",
-      qualifications: [],
-      workExperience: []
+      role: "student"
     });
 
     res.status(201).json({
@@ -55,7 +65,6 @@ router.post("/register", async (req, res) => {
       studentId: user.uid,
     });
   } catch (error) {
-    console.error("Registration error:", error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -66,8 +75,11 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
     // Sign in with Firebase Auth
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const userCredential = await auth.signInWithEmailAndPassword(auth.getAuth(), email, password);
     const user = userCredential.user;
+
+    // Get custom token for your app
+    const token = await auth.createCustomToken(user.uid);
 
     // Get student data from Firestore
     const studentDoc = await getDoc(doc(db, "students", user.uid));
@@ -87,7 +99,7 @@ router.post("/login", async (req, res) => {
         role: 'student',
         ...studentData
       },
-      token: user.uid // Using UID as token for simplicity
+      token: token
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -102,6 +114,12 @@ router.post("/login", async (req, res) => {
 router.get("/profile/:studentId", authenticateToken, async (req, res) => {
   try {
     const { studentId } = req.params;
+    
+    // Verify the student is accessing their own profile
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     const studentDoc = await getDoc(doc(db, "students", studentId));
     
     if (!studentDoc.exists()) {
@@ -118,6 +136,12 @@ router.get("/profile/:studentId", authenticateToken, async (req, res) => {
 router.patch("/profile/:studentId", authenticateToken, async (req, res) => {
   try {
     const { studentId } = req.params;
+    
+    // Verify the student is updating their own profile
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     const updates = req.body;
 
     await updateDoc(doc(db, "students", studentId), {
@@ -131,47 +155,27 @@ router.patch("/profile/:studentId", authenticateToken, async (req, res) => {
   }
 });
 
-// Check if student qualifies for course
-const checkCourseQualifications = async (studentId, courseId) => {
-  try {
-    const studentDoc = await getDoc(doc(db, "students", studentId));
-    const courseDoc = await getDoc(doc(db, "courses", courseId));
-    
-    if (!studentDoc.exists() || !courseDoc.exists()) {
-      return false;
-    }
-
-    const student = studentDoc.data();
-    const course = courseDoc.data();
-
-    // Basic qualification check - expand based on your criteria
-    if (course.requirements && course.requirements.minGrade) {
-      // Implement grade checking logic based on transcript data
-      // This is a simplified version
-      return true; // For demo purposes
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Qualification check error:", error);
-    return false;
-  }
-};
-
 // Apply for course
 router.post("/apply", authenticateToken, async (req, res) => {
   try {
     const { studentId, institutionId, courseId } = req.body;
 
-    // Check if student qualifies for the course
-    const qualifies = await checkCourseQualifications(studentId, courseId);
-    if (!qualifies) {
-      return res.status(400).json({ error: "You do not meet the requirements for this course." });
+    // Verify the student is applying for themselves
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Fetch student
+    const studentDoc = await getDoc(doc(db, "students", studentId));
+
+    if (!studentDoc.exists()) {
+      return res.status(404).json({ error: "Student not found" });
     }
 
     // Check if already applied to 2 courses in this institution
+    const applicationsRef = collection(db, "applications");
     const applicationsQuery = query(
-      collection(db, "applications"),
+      applicationsRef,
       where("studentId", "==", studentId),
       where("institutionId", "==", institutionId)
     );
@@ -183,13 +187,13 @@ router.post("/apply", authenticateToken, async (req, res) => {
 
     // Check if already applied to this specific course
     const existingAppQuery = query(
-      collection(db, "applications"),
+      applicationsRef,
       where("studentId", "==", studentId),
       where("courseId", "==", courseId)
     );
+    const existingAppSnapshot = await getDocs(existingAppQuery);
 
-    const existingApp = await getDocs(existingAppQuery);
-    if (!existingApp.empty) {
+    if (!existingAppSnapshot.empty) {
       return res.status(400).json({ error: "Already applied for this course" });
     }
 
@@ -203,6 +207,15 @@ router.post("/apply", authenticateToken, async (req, res) => {
 
     const courseData = courseDoc.data();
     const institutionData = institutionDoc.data();
+    const studentData = studentDoc.data();
+
+    // Check if student meets course requirements (basic check)
+    if (courseData.requirements && courseData.requirements.includes("LGCSE") && 
+        !studentData.highSchool) {
+      return res.status(400).json({ 
+        error: "You do not meet the minimum requirements for this course. Please complete your profile." 
+      });
+    }
 
     // Create application
     const applicationData = {
@@ -211,27 +224,28 @@ router.post("/apply", authenticateToken, async (req, res) => {
       courseId,
       courseName: courseData.name,
       institutionName: institutionData.name,
+      studentName: studentData.name,
+      studentEmail: studentData.email,
       status: "pending",
       appliedAt: new Date(),
     };
 
     const applicationRef = await addDoc(collection(db, "applications"), applicationData);
     
-    // Update student's applied courses
-    const studentRef = doc(db, "students", studentId);
-    const studentDoc = await getDoc(studentRef);
-    const currentAppliedCourses = studentDoc.data().appliedCourses || [];
-    
-    await updateDoc(studentRef, {
-      appliedCourses: [...currentAppliedCourses, courseId]
-    });
+    // Create notification for student
+    await createNotification(
+      studentId,
+      "📝 Application Submitted",
+      `Your application for ${courseData.name} at ${institutionData.name} has been submitted successfully.`,
+      'info',
+      '/student/applications'
+    );
 
     res.status(201).json({ 
       message: "Course application submitted!",
       applicationId: applicationRef.id 
     });
   } catch (error) {
-    console.error("Application error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -241,15 +255,22 @@ router.get("/applications/:studentId", authenticateToken, async (req, res) => {
   try {
     const { studentId } = req.params;
     
+    // Verify the student is accessing their own applications
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const applicationsRef = collection(db, "applications");
     const applicationsQuery = query(
-      collection(db, "applications"),
-      where("studentId", "==", studentId)
+      applicationsRef,
+      where("studentId", "==", studentId),
+      orderBy("appliedAt", "desc")
     );
 
-    const applicationsSnap = await getDocs(applicationsQuery);
+    const snapshot = await getDocs(applicationsQuery);
     const applications = [];
-    
-    for (const doc of applicationsSnap.docs) {
+
+    for (const doc of snapshot.docs) {
       const application = { id: doc.id, ...doc.data() };
       
       // Get course details
@@ -278,9 +299,233 @@ router.delete("/applications/:applicationId", authenticateToken, async (req, res
   try {
     const { applicationId } = req.params;
     
+    // Get application to verify ownership
+    const applicationDoc = await getDoc(doc(db, "applications", applicationId));
+    if (!applicationDoc.exists()) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+
+    const application = applicationDoc.data();
+    
+    // Verify the student is withdrawing their own application
+    if (req.user.uid !== application.studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Check if application can be withdrawn (only pending applications)
+    if (application.status !== 'pending') {
+      return res.status(400).json({ 
+        error: "Cannot withdraw application. Application status is: " + application.status 
+      });
+    }
+
     await deleteDoc(doc(db, "applications", applicationId));
     
     res.status(200).json({ message: "Application withdrawn successfully!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// View admission status
+router.get("/admissions/:studentId", authenticateToken, async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    
+    // Verify the student is accessing their own admissions
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const applicationsRef = collection(db, "applications");
+    const admissionsQuery = query(
+      applicationsRef,
+      where("studentId", "==", studentId),
+      where("status", "in", ["admitted", "rejected", "pending", "waiting", "confirmed"])
+    );
+
+    const snapshot = await getDocs(admissionsQuery);
+    const admissions = [];
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      admissions.push({ 
+        id: doc.id, 
+        ...data,
+        // Convert Firestore timestamp to JavaScript Date
+        appliedAt: data.appliedAt?.toDate(),
+        admittedAt: data.admittedAt?.toDate(),
+        updatedAt: data.updatedAt?.toDate()
+      });
+    });
+
+    res.status(200).json(admissions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Upload transcript
+router.post("/uploadTranscript", authenticateToken, async (req, res) => {
+  try {
+    const { studentId, transcriptUrl } = req.body;
+
+    // Verify the student is uploading their own transcript
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await updateDoc(doc(db, "students", studentId), {
+      transcriptUrl,
+      transcriptUploadedAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Create notification for student
+    await createNotification(
+      studentId,
+      "📄 Transcript Uploaded",
+      "Your academic transcript has been uploaded successfully and is now available for job applications.",
+      'success',
+      '/student/transcript'
+    );
+
+    res.status(200).json({ message: "Transcript uploaded successfully!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get job recommendations
+router.get("/jobs/:studentId", authenticateToken, async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    
+    // Verify the student is accessing their own job recommendations
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const jobsRef = collection(db, "jobs");
+    const jobsQuery = query(
+      jobsRef,
+      where("status", "==", "active"),
+      where("deadline", ">", new Date())
+    );
+    
+    const snapshot = await getDocs(jobsQuery);
+    const jobs = [];
+    
+    snapshot.forEach(doc => {
+      const jobData = doc.data();
+      jobs.push({ 
+        id: doc.id, 
+        ...jobData,
+        deadline: jobData.deadline?.toDate()
+      });
+    });
+
+    // Get student data for personalized recommendations
+    const studentDoc = await getDoc(doc(db, "students", studentId));
+    const studentData = studentDoc.data();
+
+    // Basic recommendation logic based on student profile
+    const recommendedJobs = jobs.filter(job => {
+      // Check if student has required qualifications
+      if (job.requirements) {
+        const requirements = job.requirements.toLowerCase();
+        if (requirements.includes("degree") && !studentData.transcriptUrl) {
+          return false;
+        }
+        if (requirements.includes("computer science") && 
+            studentData.highSchool && 
+            !studentData.highSchool.toLowerCase().includes("science")) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    res.status(200).json(recommendedJobs);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Apply for job
+router.post("/apply-job", authenticateToken, async (req, res) => {
+  try {
+    const { studentId, jobId } = req.body;
+
+    // Verify the student is applying for themselves
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Check if already applied
+    const jobApplicationsRef = collection(db, "jobApplications");
+    const existingAppQuery = query(
+      jobApplicationsRef,
+      where("studentId", "==", studentId),
+      where("jobId", "==", jobId)
+    );
+
+    const existingAppSnapshot = await getDocs(existingAppQuery);
+
+    if (!existingAppSnapshot.empty) {
+      return res.status(400).json({ error: "Already applied for this job" });
+    }
+
+    // Get student and job data
+    const studentDoc = await getDoc(doc(db, "students", studentId));
+    const jobDoc = await getDoc(doc(db, "jobs", jobId));
+
+    if (!studentDoc.exists() || !jobDoc.exists()) {
+      return res.status(404).json({ error: "Student or job not found" });
+    }
+
+    const studentData = studentDoc.data();
+    const jobData = jobDoc.data();
+
+    // Check if student has uploaded transcript for degree-required jobs
+    if (jobData.requirements && jobData.requirements.toLowerCase().includes("degree") && 
+        !studentData.transcriptUrl) {
+      return res.status(400).json({ 
+        error: "This job requires a degree. Please upload your academic transcript first." 
+      });
+    }
+
+    // Create job application
+    const jobApplication = {
+      studentId,
+      jobId,
+      studentName: studentData.name,
+      studentEmail: studentData.email,
+      studentPhone: studentData.phone,
+      studentAddress: studentData.address,
+      highSchool: studentData.highSchool,
+      graduationYear: studentData.graduationYear,
+      transcriptUrl: studentData.transcriptUrl,
+      jobTitle: jobData.title,
+      companyName: jobData.companyName,
+      status: "pending",
+      appliedAt: new Date(),
+    };
+
+    await addDoc(collection(db, "jobApplications"), jobApplication);
+    
+    // Create notification for student
+    await createNotification(
+      studentId,
+      "💼 Job Application Submitted",
+      `Your application for ${jobData.title} at ${jobData.companyName} has been submitted successfully.`,
+      'info',
+      '/student/jobs'
+    );
+
+    // Create notification for company (simplified - in real app, you'd have company notifications)
+    
+    res.status(201).json({ message: "Job application submitted successfully!" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -310,187 +555,78 @@ router.post("/admissions/accept", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Application is not admitted" });
     }
 
-    const batch = writeBatch(db);
+    // Get all other admitted applications for this student
+    const otherAdmittedAppsQuery = query(
+      collection(db, "applications"),
+      where("studentId", "==", studentId),
+      where("status", "==", "admitted"),
+      where("id", "!=", applicationId)
+    );
 
+    const otherAdmittedSnapshot = await getDocs(otherAdmittedAppsQuery);
+
+    const batch = writeBatch(db);
+    
     // Confirm the selected application
     batch.update(doc(db, "applications", applicationId), { 
       status: 'confirmed', 
       confirmedAt: new Date() 
     });
 
-    // Get all other applications for this student
-    const otherAppsQuery = query(
-      collection(db, "applications"),
-      where("studentId", "==", studentId),
-      where("status", "in", ["admitted", "pending", "waiting"])
-    );
-
-    const otherAppsSnap = await getDocs(otherAppsQuery);
-    
-    for (const otherDoc of otherAppsSnap.docs) {
-      if (otherDoc.id !== applicationId) {
-        const otherApp = otherDoc.data();
-        
-        if (otherApp.status === 'admitted') {
-          // Decline other admitted applications
-          batch.update(otherDoc.ref, { 
-            status: 'declined', 
-            declinedAt: new Date() 
-          });
-
-          // Move first student from waitlist to admitted
-          const waitlistQuery = query(
-            collection(db, "applications"),
-            where("courseId", "==", otherApp.courseId),
-            where("status", "==", "waiting"),
-            orderBy("appliedAt", "asc"),
-            limit(1)
-          );
-
-          const waitlistSnap = await getDocs(waitlistQuery);
-          if (!waitlistSnap.empty) {
-            const firstWaitlist = waitlistSnap.docs[0];
-            batch.update(firstWaitlist.ref, { 
-              status: 'admitted', 
-              admittedAt: new Date() 
-            });
-          }
-        } else {
-          // Withdraw pending/waiting applications
-          batch.update(otherDoc.ref, { 
-            status: 'withdrawn', 
-            withdrawnAt: new Date() 
-          });
-        }
-      }
-    }
+    // Decline all other admitted applications
+    otherAdmittedSnapshot.forEach(doc => {
+      batch.update(doc.ref, { 
+        status: 'declined', 
+        declinedAt: new Date() 
+      });
+    });
 
     await batch.commit();
 
+    // Create notification for the student
+    await createNotification(
+      studentId,
+      "✅ Admission Confirmed!",
+      `You have confirmed your admission to ${application.courseName} at ${application.institutionName}. Welcome!`,
+      'success',
+      '/student/applications'
+    );
+
     res.status(200).json({ 
       message: "Admission accepted successfully!",
-      confirmedCourse: application.courseName
+      confirmedCourse: application.courseName,
+      declinedCount: otherAdmittedSnapshot.size
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Upload transcript
-router.post("/uploadTranscript", authenticateToken, async (req, res) => {
-  try {
-    const { studentId, transcriptUrl } = req.body;
-
-    await updateDoc(doc(db, "students", studentId), {
-      transcriptUrl,
-      updatedAt: new Date(),
-    });
-
-    res.status(200).json({ message: "Transcript uploaded successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get job recommendations based on qualifications
-router.get("/jobs/:studentId", authenticateToken, async (req, res) => {
+// Get student dashboard stats
+router.get("/dashboard/:studentId", authenticateToken, async (req, res) => {
   try {
     const { studentId } = req.params;
     
-    // Get student profile with qualifications
-    const studentDoc = await getDoc(doc(db, "students", studentId));
-    if (!studentDoc.exists()) {
-      return res.status(404).json({ error: "Student not found" });
+    // Verify the student is accessing their own dashboard
+    if (req.user.uid !== studentId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
     }
 
-    const student = studentDoc.data();
+    const applicationsRef = collection(db, "applications");
+    const applicationsQuery = query(applicationsRef, where("studentId", "==", studentId));
+    const applicationsSnapshot = await getDocs(applicationsQuery);
     
-    // Get all active jobs
-    const jobsQuery = query(
-      collection(db, "jobs"),
-      where("status", "==", "active")
-    );
+    const applications = applicationsSnapshot.docs.map(doc => doc.data());
     
-    const jobsSnap = await getDocs(jobsQuery);
-    const jobs = [];
-    
-    for (const jobDoc of jobsSnap.docs) {
-      const job = { id: jobDoc.id, ...jobDoc.data() };
-      
-      // Check if student qualifies for this job
-      const qualifies = await checkJobQualifications(student, job);
-      if (qualifies) {
-        jobs.push(job);
-      }
-    }
-
-    res.status(200).json(jobs);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Check job qualifications
-const checkJobQualifications = async (student, job) => {
-  // Implement qualification matching logic
-  // This should check:
-  // - Academic performance (transcript grades)
-  // - Extra certificates
-  // - Work experience
-  // - Relevance to job requirements
-  
-  // Simplified version for demo
-  if (job.requirements && job.requirements.minEducation) {
-    // Check if student meets education requirements
-    return true; // For demo purposes
-  }
-  
-  return true;
-};
-
-// Apply for job
-router.post("/apply-job", authenticateToken, async (req, res) => {
-  try {
-    const { studentId, jobId } = req.body;
-
-    // Check if already applied
-    const existingAppQuery = query(
-      collection(db, "jobApplications"),
-      where("studentId", "==", studentId),
-      where("jobId", "==", jobId)
-    );
-
-    const existingApp = await getDocs(existingAppQuery);
-    if (!existingApp.empty) {
-      return res.status(400).json({ error: "Already applied for this job" });
-    }
-
-    // Get student and job data
-    const studentDoc = await getDoc(doc(db, "students", studentId));
-    const jobDoc = await getDoc(doc(db, "jobs", jobId));
-
-    if (!studentDoc.exists() || !jobDoc.exists()) {
-      return res.status(404).json({ error: "Student or job not found" });
-    }
-
-    const studentData = studentDoc.data();
-    const jobData = jobDoc.data();
-
-    // Create job application
-    const jobApplication = {
-      studentId,
-      jobId,
-      studentName: studentData.name,
-      studentEmail: studentData.email,
-      jobTitle: jobData.title,
-      companyName: jobData.companyName,
-      status: "pending",
-      appliedAt: new Date(),
+    const stats = {
+      totalApplications: applications.length,
+      pendingApplications: applications.filter(app => app.status === 'pending').length,
+      admittedApplications: applications.filter(app => app.status === 'admitted').length,
+      rejectedApplications: applications.filter(app => app.status === 'rejected').length,
+      confirmedApplications: applications.filter(app => app.status === 'confirmed').length
     };
 
-    await addDoc(collection(db, "jobApplications"), jobApplication);
-    
-    res.status(201).json({ message: "Job application submitted successfully!" });
+    res.status(200).json(stats);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

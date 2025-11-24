@@ -1,7 +1,7 @@
 // routes/institutionRoutes.js
 import express from "express";
 import { db, auth } from "../config/firebase.js";
-import { createNotification } from "./notifications.js";
+import { createNotification } from "../utility/notifications.js";
 import { collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 

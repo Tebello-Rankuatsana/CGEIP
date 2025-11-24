@@ -1,58 +1,88 @@
-import { collection, addDoc } from "firebase/firestore";
-import { db } from "../config/firebase";
+// backend/routes/notifications.js
+import express from "express";
+// import { authenticateToken } from "./middleware/auth.js";
+import { 
+  getNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead 
+} from "../utility/notifications.js";
 
-// Utility function to create notifications
-export const createNotification = async (userId, title, message, type = 'info', link = '') => {
-  try {
-    await addDoc(collection(db, "notifications"), {
-      userId,
-      title,
-      message,
-      type,
-      link,
-      isRead: false,
-      createdAt: new Date()
-    });
-    return true;
-  } catch (error) {
-    console.error("Error creating notification:", error);
-    return false;
-  }
-};
+const router = express.Router();
 
-// Get notifications for user
-export const getNotifications = async (userId) => {
+// Get user notifications
+router.get("/:userId", authenticateToken, async (req, res) => {
   try {
-    const { collection, query, where, orderBy, getDocs } = await import('firebase/firestore');
-    const notificationsRef = collection(db, "notifications");
-    const q = query(
-      notificationsRef,
-      where("userId", "==", userId),
-      orderBy("createdAt", "desc")
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate()
-    }));
+    const { userId } = req.params;
+    
+    // Verify user is accessing their own notifications
+    if (req.user.uid !== userId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const notifications = await getNotifications(userId);
+    res.status(200).json(notifications);
   } catch (error) {
-    console.error("Error getting notifications:", error);
-    return [];
+    res.status(500).json({ error: error.message });
   }
-};
+});
 
 // Mark notification as read
-export const markNotificationAsRead = async (notificationId) => {
+router.patch("/:notificationId/read", authenticateToken, async (req, res) => {
   try {
-    const { doc, updateDoc } = await import('firebase/firestore');
-    await updateDoc(doc(db, "notifications", notificationId), {
-      isRead: true,
-      readAt: new Date()
-    });
-    return true;
+    const { notificationId } = req.params;
+    
+    // In a real app, you might want to verify the notification belongs to the user
+    const success = await markNotificationAsRead(notificationId);
+    
+    if (success) {
+      res.status(200).json({ message: "Notification marked as read" });
+    } else {
+      res.status(400).json({ error: "Failed to mark notification as read" });
+    }
   } catch (error) {
-    console.error("Error marking notification as read:", error);
-    return false;
+    res.status(500).json({ error: error.message });
   }
-};
+});
+
+// Mark all notifications as read for user
+router.post("/:userId/read-all", authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Verify user is accessing their own notifications
+    if (req.user.uid !== userId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const success = await markAllNotificationsAsRead(userId);
+    
+    if (success) {
+      res.status(200).json({ message: "All notifications marked as read" });
+    } else {
+      res.status(400).json({ error: "Failed to mark notifications as read" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get unread notifications count
+router.get("/:userId/unread-count", authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Verify user is accessing their own notifications
+    if (req.user.uid !== userId && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const notifications = await getNotifications(userId);
+    const unreadCount = notifications.filter(n => !n.isRead).length;
+    
+    res.status(200).json({ unreadCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;
