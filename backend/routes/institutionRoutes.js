@@ -1,4 +1,3 @@
-// routes/institutionRoutes.js
 import express from "express";
 import { db, auth } from "../config/firebase.js";
 import { createNotification } from "../utility/notifications.js";
