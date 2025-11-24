@@ -1,16 +1,36 @@
 import express from "express";
 import { db, auth } from "../config/firebase.js";
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  writeBatch 
+} from "firebase/firestore";
 
 const router = express.Router();
 
-// Authentication middleware
-const authenticateToken = async (req, res, next) => {
+// Admin authentication middleware
+const authenticateAdmin = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
       return res.status(401).json({ error: "Access token required" });
     }
     const decodedToken = await auth.verifyIdToken(token);
+    
+    // Check if user is admin
+    const userDoc = await getDoc(doc(db, "users", decodedToken.uid));
+    if (!userDoc.exists() || userDoc.data().role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     req.user = decodedToken;
     next();
   } catch (error) {
@@ -18,16 +38,373 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-// Admin authorization middleware
-const requireAdmin = (req, res, next) => {
-  // In a real app, check if user has admin role
-  // For now, we'll assume all authenticated users can access admin routes
-  next();
-};
-// Temporary admin creation route(only for development/testing)
-router.post("/create-admin", async (req, res) => {
+// Admin login
+router.post("/login", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { email, password } = req.body;
+
+    // Sign in with Firebase Auth
+    const userCredential = await auth.signInWithEmailAndPassword(auth.getAuth(), email, password);
+    const user = userCredential.user;
+
+    // Verify admin role
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (!userDoc.exists() || userDoc.data().role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    // Get custom token for your app
+    const token = await auth.createCustomToken(user.uid);
+
+    const userData = userDoc.data();
+
+    res.status(200).json({
+      success: true,
+      message: "Admin login successful!",
+      user: {
+        uid: user.uid,
+        email: user.email,
+        role: 'admin',
+        ...userData
+      },
+      token: token
+    });
+  } catch (error) {
+    console.error("Admin login error:", error);
+    res.status(401).json({
+      success: false,
+      message: "Invalid email or password"
+    });
+  }
+});
+
+// Get dashboard statistics
+router.get("/dashboard/stats", authenticateAdmin, async (req, res) => {
+  try {
+    // Get total counts
+    const institutionsSnapshot = await getDocs(collection(db, 'institutions'));
+    const studentsSnapshot = await getDocs(collection(db, 'students'));
+    const companiesSnapshot = await getDocs(collection(db, 'companies'));
+    const coursesSnapshot = await getDocs(collection(db, 'courses'));
+    const applicationsSnapshot = await getDocs(collection(db, 'applications'));
+    const jobsSnapshot = await getDocs(collection(db, 'jobs'));
+
+    // Get pending companies count
+    const pendingCompaniesQuery = query(collection(db, 'companies'), where('status', '==', 'pending'));
+    const pendingCompaniesSnapshot = await getDocs(pendingCompaniesQuery);
+
+    // Get students with transcripts
+    const studentsWithTranscriptsQuery = query(
+      collection(db, 'students'),
+      where('transcriptUrl', '!=', '')
+    );
+    const studentsWithTranscriptsSnapshot = await getDocs(studentsWithTranscriptsQuery);
+
+    const stats = {
+      totalInstitutions: institutionsSnapshot.size,
+      totalStudents: studentsSnapshot.size,
+      totalCompanies: companiesSnapshot.size,
+      totalCourses: coursesSnapshot.size,
+      totalApplications: applicationsSnapshot.size,
+      totalJobs: jobsSnapshot.size,
+      pendingCompanies: pendingCompaniesSnapshot.size,
+      studentsWithTranscripts: studentsWithTranscriptsSnapshot.size
+    };
+
+    res.status(200).json(stats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all institutions
+router.get("/institutions", authenticateAdmin, async (req, res) => {
+  try {
+    const institutionsRef = collection(db, 'institutions');
+    const snapshot = await getDocs(institutionsRef);
+    const institutions = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate()
+    }));
+    
+    res.status(200).json(institutions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update institution status
+router.patch("/institutions/:institutionId/status", authenticateAdmin, async (req, res) => {
+  try {
+    const { institutionId } = req.params;
+    const { status } = req.body;
+
+    await updateDoc(doc(db, 'institutions', institutionId), {
+      status,
+      updatedAt: new Date()
+    });
+
+    res.status(200).json({ message: `Institution ${status} successfully!` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete institution
+router.delete("/institutions/:institutionId", authenticateAdmin, async (req, res) => {
+  try {
+    const { institutionId } = req.params;
+
+    // Check if institution has courses
+    const coursesQuery = query(collection(db, 'courses'), where('institutionId', '==', institutionId));
+    const coursesSnapshot = await getDocs(coursesQuery);
+    
+    if (!coursesSnapshot.empty) {
+      return res.status(400).json({ 
+        error: "Cannot delete institution. There are courses associated with this institution." 
+      });
+    }
+
+    await deleteDoc(doc(db, 'institutions', institutionId));
+    
+    res.status(200).json({ message: "Institution deleted successfully!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all students
+router.get("/students", authenticateAdmin, async (req, res) => {
+  try {
+    const { filter } = req.query;
+    const studentsRef = collection(db, 'students');
+    let studentsQuery;
+
+    if (filter === 'with-transcript') {
+      studentsQuery = query(studentsRef, where('transcriptUrl', '!=', ''));
+    } else if (filter === 'without-transcript') {
+      studentsQuery = query(studentsRef, where('transcriptUrl', '==', ''));
+    } else {
+      studentsQuery = studentsRef;
+    }
+
+    const snapshot = await getDocs(studentsQuery);
+    const students = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate()
+    }));
+    
+    res.status(200).json(students);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update student status
+router.patch("/students/:studentId/status", authenticateAdmin, async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { status } = req.body;
+
+    await updateDoc(doc(db, 'students', studentId), {
+      status,
+      updatedAt: new Date()
+    });
+
+    res.status(200).json({ message: `Student ${status} successfully!` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all companies
+router.get("/companies", authenticateAdmin, async (req, res) => {
+  try {
+    const { filter } = req.query;
+    const companiesRef = collection(db, 'companies');
+    let companiesQuery;
+
+    if (filter && filter !== 'all') {
+      companiesQuery = query(companiesRef, where('status', '==', filter));
+    } else {
+      companiesQuery = companiesRef;
+    }
+
+    const snapshot = await getDocs(companiesQuery);
+    const companies = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate()
+    }));
+    
+    res.status(200).json(companies);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update company status
+router.patch("/companies/:companyId/status", authenticateAdmin, async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const { status } = req.body;
+
+    await updateDoc(doc(db, 'companies', companyId), {
+      status,
+      updatedAt: new Date()
+    });
+
+    res.status(200).json({ message: `Company ${status} successfully!` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete company
+router.delete("/companies/:companyId", authenticateAdmin, async (req, res) => {
+  try {
+    const { companyId } = req.params;
+
+    // Check if company has job postings
+    const jobsQuery = query(collection(db, 'jobs'), where('companyId', '==', companyId));
+    const jobsSnapshot = await getDocs(jobsQuery);
+    
+    if (!jobsSnapshot.empty) {
+      return res.status(400).json({ 
+        error: "Cannot delete company. There are job postings associated with this company." 
+      });
+    }
+
+    await deleteDoc(doc(db, 'companies', companyId));
+    
+    res.status(200).json({ message: "Company deleted successfully!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all applications
+router.get("/applications", authenticateAdmin, async (req, res) => {
+  try {
+    const { filter } = req.query;
+    const applicationsRef = collection(db, 'applications');
+    let applicationsQuery;
+
+    if (filter && filter !== 'all') {
+      applicationsQuery = query(applicationsRef, where('status', '==', filter));
+    } else {
+      applicationsQuery = query(applicationsRef, orderBy('appliedAt', 'desc'));
+    }
+
+    const snapshot = await getDocs(applicationsQuery);
+    const applications = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      appliedAt: doc.data().appliedAt?.toDate(),
+      admittedAt: doc.data().admittedAt?.toDate()
+    }));
+    
+    res.status(200).json(applications);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all courses
+router.get("/courses", authenticateAdmin, async (req, res) => {
+  try {
+    const coursesRef = collection(db, 'courses');
+    const snapshot = await getDocs(coursesRef);
+    const courses = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate()
+    }));
+    
+    res.status(200).json(courses);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get detailed reports
+router.get("/reports/detailed", authenticateAdmin, async (req, res) => {
+  try {
+    // Get all data for comprehensive reports
+    const institutionsSnapshot = await getDocs(collection(db, 'institutions'));
+    const studentsSnapshot = await getDocs(collection(db, 'students'));
+    const companiesSnapshot = await getDocs(collection(db, 'companies'));
+    const coursesSnapshot = await getDocs(collection(db, 'courses'));
+    const applicationsSnapshot = await getDocs(collection(db, 'applications'));
+    const jobsSnapshot = await getDocs(collection(db, 'jobs'));
+
+    // Application status breakdown
+    const applications = applicationsSnapshot.docs.map(doc => doc.data());
+    const applicationStatus = {
+      pending: applications.filter(app => app.status === 'pending').length,
+      admitted: applications.filter(app => app.status === 'admitted').length,
+      confirmed: applications.filter(app => app.status === 'confirmed').length,
+      waiting: applications.filter(app => app.status === 'waiting').length,
+      rejected: applications.filter(app => app.status === 'rejected').length,
+      declined: applications.filter(app => app.status === 'declined').length
+    };
+
+    // Institution statistics
+    const institutions = institutionsSnapshot.docs.map(doc => doc.data());
+    const institutionStats = {
+      active: institutions.filter(inst => inst.status === 'active').length,
+      suspended: institutions.filter(inst => inst.status === 'suspended').length,
+      byType: institutions.reduce((acc, inst) => {
+        acc[inst.type] = (acc[inst.type] || 0) + 1;
+        return acc;
+      }, {})
+    };
+
+    // Company statistics
+    const companies = companiesSnapshot.docs.map(doc => doc.data());
+    const companyStats = {
+      active: companies.filter(comp => comp.status === 'active').length,
+      pending: companies.filter(comp => comp.status === 'pending').length,
+      suspended: companies.filter(comp => comp.status === 'suspended').length
+    };
+
+    // Student statistics
+    const students = studentsSnapshot.docs.map(doc => doc.data());
+    const studentsWithTranscripts = students.filter(student => student.transcriptUrl).length;
+
+    const reports = {
+      summary: {
+        totalInstitutions: institutionsSnapshot.size,
+        totalStudents: studentsSnapshot.size,
+        totalCompanies: companiesSnapshot.size,
+        totalCourses: coursesSnapshot.size,
+        totalApplications: applicationsSnapshot.size,
+        totalJobs: jobsSnapshot.size
+      },
+      applicationStatus,
+      institutionStats,
+      companyStats,
+      studentStats: {
+        total: studentsSnapshot.size,
+        withTranscripts: studentsWithTranscripts,
+        withoutTranscripts: studentsSnapshot.size - studentsWithTranscripts,
+        transcriptRate: studentsSnapshot.size > 0 ? 
+          (studentsWithTranscripts / studentsSnapshot.size * 100).toFixed(1) + '%' : '0%'
+      }
+    };
+
+    res.status(200).json(reports);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new institution (admin only)
+router.post("/institutions", authenticateAdmin, async (req, res) => {
+  try {
+    const { name, email, password, type, location, contactPerson, phone } = req.body;
 
     // Create user in Firebase Authentication
     const user = await auth.createUser({
@@ -36,268 +413,93 @@ router.post("/create-admin", async (req, res) => {
       displayName: name,
     });
 
-    // Create admin profile in Firestore
-    await db.collection("admins").doc(user.uid).set({
+    // Create institution profile in Firestore
+    await setDoc(doc(db, "institutions", user.uid), {
       name,
       email,
-      role: "admin",
+      type,
+      location,
+      contactPerson,
+      phone,
+      status: "active",
+      address: "",
+      website: "",
+      description: "",
+      established: "",
       createdAt: new Date(),
-      permissions: ["all"]
+      role: "institution"
     });
 
     res.status(201).json({
-      message: "Admin created successfully!",
-      adminId: user.uid,
-      email: email,
-      password: password // Only for development - remove in production
+      message: "Institution created successfully!",
+      institutionId: user.uid,
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// Get all institutions
-router.get("/institutions", authenticateToken, requireAdmin, async (req, res) => {
+// System maintenance - bulk operations
+router.post("/maintenance/cleanup", authenticateAdmin, async (req, res) => {
   try {
-    const institutionsSnap = await db.collection("institutions").get();
-    const institutions = [];
-    institutionsSnap.forEach(doc => institutions.push({ id: doc.id, ...doc.data() }));
-    res.status(200).json(institutions);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const { operation } = req.body;
 
-// Add institution
-router.post("/institutions", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { name, email, address, contactPerson, phone, website } = req.body;
-
-    const institutionData = {
-      name,
-      email,
-      address,
-      contactPerson,
-      phone,
-      website,
-      status: "active",
-      createdAt: new Date(),
-    };
-
-    const institutionRef = await db.collection("institutions").add(institutionData);
-    
-    res.status(201).json({ 
-      message: "Institution added successfully!",
-      institutionId: institutionRef.id 
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update institution
-router.put("/institutions/:institutionId", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { institutionId } = req.params;
-    const updates = req.body;
-
-    await db.collection("institutions").doc(institutionId).update({
-      ...updates,
-      updatedAt: new Date(),
-    });
-
-    res.status(200).json({ message: "Institution updated successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete institution
-router.delete("/institutions/:institutionId", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { institutionId } = req.params;
-    
-    await db.collection("institutions").doc(institutionId).delete();
-    
-    res.status(200).json({ message: "Institution deleted successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get all companies
-router.get("/companies", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const companiesSnap = await db.collection("companies").get();
-    const companies = [];
-    companiesSnap.forEach(doc => companies.push({ id: doc.id, ...doc.data() }));
-    res.status(200).json(companies);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Approve company
-router.put("/companies/:companyId/approve", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { companyId } = req.params;
-
-    await db.collection("companies").doc(companyId).update({
-      status: "approved",
-      updatedAt: new Date(),
-    });
-
-    res.status(200).json({ message: "Company approved successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Suspend company
-router.put("/companies/:companyId/suspend", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { companyId } = req.params;
-
-    await db.collection("companies").doc(companyId).update({
-      status: "suspended",
-      updatedAt: new Date(),
-    });
-
-    res.status(200).json({ message: "Company suspended successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete company
-router.delete("/companies/:companyId", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { companyId } = req.params;
-    
-    await db.collection("companies").doc(companyId).delete();
-    
-    res.status(200).json({ message: "Company deleted successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get all students
-router.get("/students", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const studentsSnap = await db.collection("students").get();
-    const students = [];
-    studentsSnap.forEach(doc => students.push({ id: doc.id, ...doc.data() }));
-    res.status(200).json(students);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get pending approvals (companies with pending status)
-router.get("/pending-approvals", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const pendingCompaniesSnap = await db.collection("companies")
-      .where("status", "==", "pending")
-      .get();
-    
-    const pendingApprovals = [];
-    pendingCompaniesSnap.forEach(doc => pendingApprovals.push({ id: doc.id, ...doc.data() }));
-    
-    res.status(200).json(pendingApprovals);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get system reports
-router.get("/reports", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    // Get basic statistics
-    const [institutionsSnap, studentsSnap, companiesSnap, applicationsSnap, jobsSnap] = await Promise.all([
-      db.collection("institutions").get(),
-      db.collection("students").get(),
-      db.collection("companies").get(),
-      db.collection("applications").get(),
-      db.collection("jobs").get()
-    ]);
-
-    const totalApplications = applicationsSnap.size;
-    const admittedApplications = applicationsSnap.docs.filter(doc => doc.data().status === 'admitted').length;
-    const admissionRate = totalApplications > 0 ? ((admittedApplications / totalApplications) * 100).toFixed(1) : 0;
-
-    // Get popular courses
-    const coursesSnap = await db.collection("courses").get();
-    const popularCourses = await Promise.all(
-      coursesSnap.docs.slice(0, 5).map(async (doc) => {
-        const course = doc.data();
-        const applicationsCount = await db.collection("applications")
-          .where("courseId", "==", doc.id)
-          .get();
+    switch (operation) {
+      case 'remove_old_applications':
+        // Remove applications older than 1 year
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
         
-        return {
-          name: course.name,
-          applications: applicationsCount.size
-        };
-      })
-    );
-
-    // Get institution stats
-    const institutionStats = await Promise.all(
-      institutionsSnap.docs.slice(0, 5).map(async (doc) => {
-        const institution = doc.data();
-        const coursesCount = await db.collection("courses")
-          .where("institutionId", "==", doc.id)
-          .get();
+        const oldApplicationsQuery = query(
+          collection(db, 'applications'),
+          where('appliedAt', '<', oneYearAgo),
+          where('status', 'in', ['rejected', 'declined'])
+        );
         
-        const applicationsCount = await db.collection("applications")
-          .where("institutionId", "==", doc.id)
-          .get();
+        const oldApplicationsSnapshot = await getDocs(oldApplicationsQuery);
+        const batch = writeBatch(db);
         
-        const admittedCount = applicationsCount.docs.filter(app => app.data().status === 'admitted').length;
-        const institutionAdmissionRate = applicationsCount.size > 0 ? 
-          ((admittedCount / applicationsCount.size) * 100).toFixed(1) : 0;
+        oldApplicationsSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        
+        await batch.commit();
+        
+        res.status(200).json({ 
+          message: `Removed ${oldApplicationsSnapshot.size} old applications.`,
+          removed: oldApplicationsSnapshot.size
+        });
+        break;
 
-        return {
-          name: institution.name,
-          totalCourses: coursesCount.size,
-          applications: applicationsCount.size,
-          admissionRate: institutionAdmissionRate
-        };
-      })
-    );
+      case 'suspend_inactive_institutions':
+        // Suspend institutions with no activity for 6 months
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        
+        const inactiveInstitutionsQuery = query(
+          collection(db, 'institutions'),
+          where('updatedAt', '<', sixMonthsAgo),
+          where('status', '==', 'active')
+        );
+        
+        const inactiveInstitutionsSnapshot = await getDocs(inactiveInstitutionsQuery);
+        const updateBatch = writeBatch(db);
+        
+        inactiveInstitutionsSnapshot.docs.forEach(doc => {
+          updateBatch.update(doc.ref, { status: 'suspended' });
+        });
+        
+        await updateBatch.commit();
+        
+        res.status(200).json({ 
+          message: `Suspended ${inactiveInstitutionsSnapshot.size} inactive institutions.`,
+          suspended: inactiveInstitutionsSnapshot.size
+        });
+        break;
 
-    res.status(200).json({
-      totalInstitutions: institutionsSnap.size,
-      totalStudents: studentsSnap.size,
-      totalCompanies: companiesSnap.size,
-      totalJobs: jobsSnap.size,
-      totalApplications,
-      admissionRate,
-      popularCourses: popularCourses.sort((a, b) => b.applications - a.applications),
-      institutionStats
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get system overview stats for dashboard
-router.get("/dashboard-stats", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [institutionsSnap, studentsSnap, companiesSnap, pendingCompaniesSnap] = await Promise.all([
-      db.collection("institutions").get(),
-      db.collection("students").get(),
-      db.collection("companies").get(),
-      db.collection("companies").where("status", "==", "pending").get()
-    ]);
-
-    res.status(200).json({
-      totalInstitutions: institutionsSnap.size,
-      totalStudents: studentsSnap.size,
-      totalCompanies: companiesSnap.size,
-      pendingApprovals: pendingCompaniesSnap.size
-    });
+      default:
+        res.status(400).json({ error: "Invalid operation" });
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
