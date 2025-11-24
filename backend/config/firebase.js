@@ -11,9 +11,16 @@ const serviceAccount = JSON.parse(
   readFileSync(join(__dirname, 'serviceAccountKey.json'), 'utf-8')
 );
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount),
+// });
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: `${serviceAccount.project_id}.appspot.com`
+  });
+}
 
 export const db = admin.firestore();
 export const auth = admin.auth();

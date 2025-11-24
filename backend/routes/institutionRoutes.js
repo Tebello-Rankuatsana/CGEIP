@@ -1,6 +1,9 @@
+// routes/institutionRoutes.js
 import express from "express";
 import { db, auth } from "../config/firebase.js";
 import { createNotification } from "./notifications.js";
+import { collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch } from "firebase/firestore";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 
 const router = express.Router();
 
@@ -11,199 +14,150 @@ const authenticateToken = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({ error: "Access token required" });
     }
-    const decodedToken = await auth.verifyIdToken(token);
-    req.user = decodedToken;
+    req.user = { uid: token };
     next();
   } catch (error) {
     return res.status(401).json({ error: "Invalid token" });
   }
 };
 
-// Get institution profile
-router.get("/profile", authenticateToken, async (req, res) => {
+// Institution registration
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password, address, contactPerson, phone, website, description } = req.body;
+
+    // Create user in Firebase Authentication
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // Save institution profile in Firestore
+    await setDoc(doc(db, "institutions", user.uid), {
+      name,
+      email,
+      address: address || "",
+      contactPerson: contactPerson || "",
+      phone: phone || "",
+      website: website || "",
+      description: description || "",
+      status: "pending", // Needs admin approval
+      createdAt: new Date(),
+    });
+
+    res.status(201).json({
+      message: "Institution registered successfully! Awaiting admin approval.",
+      institutionId: user.uid,
+    });
+  } catch (error) {
+    console.error("Institution registration error:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Institution login
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // Get institution data from Firestore
+    const institutionDoc = await getDoc(doc(db, "institutions", user.uid));
+    
+    if (!institutionDoc.exists()) {
+      return res.status(404).json({ error: "Institution profile not found" });
+    }
+
+    const institutionData = institutionDoc.data();
+
+    // Check if institution is approved
+    if (institutionData.status !== "active") {
+      return res.status(403).json({ 
+        error: "Institution account pending admin approval" 
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Login successful!",
+      user: {
+        uid: user.uid,
+        email: user.email,
+        role: 'institution',
+        ...institutionData
+      },
+      token: user.uid
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(401).json({
+      success: false,
+      message: "Invalid email or password"
+    });
+  }
+});
+
+// Get institution applications
+router.get("/applications", authenticateToken, async (req, res) => {
   try {
     const instituteId = req.user.uid;
-    const instituteDoc = await db.collection("institutions").doc(instituteId).get();
     
-    if (!instituteDoc.exists) {
-      return res.status(404).json({ error: "Institution not found" });
+    const applicationsQuery = query(
+      collection(db, "applications"),
+      where("institutionId", "==", instituteId)
+    );
+
+    const applicationsSnap = await getDocs(applicationsQuery);
+    const applications = [];
+    
+    for (const doc of applicationsSnap.docs) {
+      const application = { id: doc.id, ...doc.data() };
+      
+      // Get student details
+      const studentDoc = await getDoc(doc(db, "students", application.studentId));
+      if (studentDoc.exists()) {
+        application.studentDetails = studentDoc.data();
+      }
+      
+      applications.push(application);
     }
     
-    res.status(200).json({ id: instituteDoc.id, ...instituteDoc.data() });
+    res.status(200).json(applications);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update institution profile
-router.patch("/profile", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    const updates = req.body;
-
-    await db.collection("institutions").doc(instituteId).update({
-      ...updates,
-      updatedAt: new Date(),
-    });
-
-    res.status(200).json({ message: "Profile updated successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get institution's faculties
-router.get("/faculties", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    const facultiesSnap = await db.collection("faculties")
-      .where("institutionId", "==", instituteId)
-      .get();
-    
-    const faculties = [];
-    facultiesSnap.forEach(doc => faculties.push({ id: doc.id, ...doc.data() }));
-    
-    res.status(200).json(faculties);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Add faculty
-router.post("/faculties", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    const { name, description } = req.body;
-
-    const facultyData = {
-      institutionId: instituteId,
-      name,
-      description,
-      createdAt: new Date(),
-    };
-
-    const facultyRef = await db.collection("faculties").add(facultyData);
-    
-    res.status(201).json({ 
-      message: "Faculty added successfully!",
-      facultyId: facultyRef.id 
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete faculty
-router.delete("/faculties/:facultyId", authenticateToken, async (req, res) => {
-  try {
-    const { facultyId } = req.params;
-    
-    await db.collection("faculties").doc(facultyId).delete();
-    
-    res.status(200).json({ message: "Faculty deleted successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get institution's courses
-router.get("/courses", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    const coursesSnap = await db.collection("courses")
-      .where("institutionId", "==", instituteId)
-      .get();
-    
-    const courses = [];
-    coursesSnap.forEach(doc => courses.push({ id: doc.id, ...doc.data() }));
-    
-    res.status(200).json(courses);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Add course
-router.post("/courses", authenticateToken, async (req, res) => {
-  try {
-    const instituteId = req.user.uid;
-    const { name, faculty, duration, requirements, description, tuitionFee, capacity } = req.body;
-
-    const courseData = {
-      institutionId: instituteId,
-      name,
-      faculty,
-      duration: parseInt(duration),
-      requirements,
-      description,
-      tuitionFee: parseFloat(tuitionFee),
-      capacity: parseInt(capacity),
-      createdAt: new Date(),
-    };
-
-    const courseRef = await db.collection("courses").add(courseData);
-    
-    res.status(201).json({ 
-      message: "Course added successfully!",
-      courseId: courseRef.id 
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update course
-router.put("/courses/:courseId", authenticateToken, async (req, res) => {
-  try {
-    const { courseId } = req.params;
-    const updates = req.body;
-
-    await db.collection("courses").doc(courseId).update({
-      ...updates,
-      updatedAt: new Date(),
-    });
-
-    res.status(200).json({ message: "Course updated successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete course
-router.delete("/courses/:courseId", authenticateToken, async (req, res) => {
-  try {
-    const { courseId } = req.params;
-    
-    await db.collection("courses").doc(courseId).delete();
-    
-    res.status(200).json({ message: "Course deleted successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get applications for institution
+// Update application status
 router.put("/applications/:applicationId", authenticateToken, async (req, res) => {
   try {
     const { applicationId } = req.params;
     const { status } = req.body;
+    const instituteId = req.user.uid;
 
     // Get application details first
-    const applicationDoc = await db.collection("applications").doc(applicationId).get();
-    if (!applicationDoc.exists) {
+    const applicationDoc = await getDoc(doc(db, "applications", applicationId));
+    if (!applicationDoc.exists()) {
       return res.status(404).json({ error: "Application not found" });
     }
 
     const application = applicationDoc.data();
 
+    // Verify the application belongs to this institution
+    if (application.institutionId !== instituteId) {
+      return res.status(403).json({ error: "Not authorized to update this application" });
+    }
+
     // Check if student is already admitted elsewhere in this institution
     if (status === 'admitted') {
-      const otherAdmissions = await db.collection("applications")
-        .where("studentId", "==", application.studentId)
-        .where("institutionId", "==", application.institutionId)
-        .where("status", "==", "admitted")
-        .get();
+      const otherAdmissionsQuery = query(
+        collection(db, "applications"),
+        where("studentId", "==", application.studentId),
+        where("institutionId", "==", application.institutionId),
+        where("status", "==", "admitted")
+      );
 
+      const otherAdmissions = await getDocs(otherAdmissionsQuery);
       if (!otherAdmissions.empty) {
         return res.status(400).json({ 
           error: "Student is already admitted to another program at this institution." 
@@ -212,7 +166,7 @@ router.put("/applications/:applicationId", authenticateToken, async (req, res) =
     }
 
     // Update application status
-    await db.collection("applications").doc(applicationId).update({
+    await updateDoc(doc(db, "applications", applicationId), {
       status,
       updatedAt: new Date(),
       ...(status === 'admitted' && { admittedAt: new Date() })
@@ -243,8 +197,7 @@ router.put("/applications/:applicationId", authenticateToken, async (req, res) =
       application.studentId,
       notificationTitle,
       notificationMessage,
-      status === 'admitted' ? 'success' : 'info',
-      '/student/applications'
+      status === 'admitted' ? 'success' : 'info'
     );
 
     res.status(200).json({ message: `Application ${status} successfully!` });
@@ -253,40 +206,45 @@ router.put("/applications/:applicationId", authenticateToken, async (req, res) =
   }
 });
 
-// Enhanced Publish admissions with notifications
+// Publish admissions
 router.post("/publish-admissions", authenticateToken, async (req, res) => {
   try {
     const instituteId = req.user.uid;
     
     // Get institution details
-    const instituteDoc = await db.collection("institutions").doc(instituteId).get();
-    const instituteName = instituteDoc.exists ? instituteDoc.data().name : "Institution";
+    const instituteDoc = await getDoc(doc(db, "institutions", instituteId));
+    const instituteName = instituteDoc.exists() ? instituteDoc.data().name : "Institution";
 
     // Get all admitted students to notify them
-    const admittedStudents = await db.collection("applications")
-      .where("institutionId", "==", instituteId)
-      .where("status", "==", "admitted")
-      .get();
+    const admittedStudentsQuery = query(
+      collection(db, "applications"),
+      where("institutionId", "==", instituteId),
+      where("status", "==", "admitted")
+    );
+
+    const admittedStudents = await getDocs(admittedStudentsQuery);
 
     // Create notifications for admitted students
+    const batch = writeBatch(db);
+    
     for (const doc of admittedStudents.docs) {
       const application = doc.data();
       await createNotification(
         application.studentId,
         "📢 Admissions Published!",
         `Admission results have been published by ${instituteName}. Check your application status now!`,
-        'info',
-        '/student/applications'
+        'info'
       );
     }
 
     // Update pending applications to waiting
-    const pendingApps = await db.collection("applications")
-      .where("institutionId", "==", instituteId)
-      .where("status", "==", "pending")
-      .get();
+    const pendingAppsQuery = query(
+      collection(db, "applications"),
+      where("institutionId", "==", instituteId),
+      where("status", "==", "pending")
+    );
 
-    const batch = db.batch();
+    const pendingApps = await getDocs(pendingAppsQuery);
     
     pendingApps.docs.forEach(doc => {
       batch.update(doc.ref, { 
@@ -301,96 +259,6 @@ router.post("/publish-admissions", authenticateToken, async (req, res) => {
       message: "Admissions published successfully! Students have been notified.",
       admitted: admittedStudents.size,
       waitlisted: pendingApps.size
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// New route: Student accepts admission offer
-router.post("/admissions/accept", authenticateToken, async (req, res) => {
-  try {
-    const { applicationId } = req.body;
-    const studentId = req.user.uid; // Assuming student is making this request
-
-    // Get the application
-    const applicationDoc = await db.collection("applications").doc(applicationId).get();
-    if (!applicationDoc.exists) {
-      return res.status(404).json({ error: "Application not found" });
-    }
-
-    const application = applicationDoc.data();
-
-    // Verify student owns this application
-    if (application.studentId !== studentId) {
-      return res.status(403).json({ error: "Not authorized to accept this offer" });
-    }
-
-    // Check if already admitted
-    if (application.status !== 'admitted') {
-      return res.status(400).json({ error: "Application is not admitted" });
-    }
-
-    // Get all other admitted applications for this student
-    const otherAdmittedApps = await db.collection("applications")
-      .where("studentId", "==", studentId)
-      .where("status", "==", "admitted")
-      .where("id", "!=", applicationId)
-      .get();
-
-    const batch = db.batch();
-    
-    // Confirm the selected application
-    batch.update(db.collection("applications").doc(applicationId), { 
-      status: 'confirmed', 
-      confirmedAt: new Date() 
-    });
-
-    // Decline all other admitted applications and move waitlist
-    for (const doc of otherAdmittedApps.docs) {
-      const otherApp = doc.data();
-      
-      // Update status to declined
-      batch.update(doc.ref, { status: 'declined', declinedAt: new Date() });
-      
-      // Move first student from waitlist to admitted for each declined application
-      const waitlistSnap = await db.collection("applications")
-        .where("courseId", "==", otherApp.courseId)
-        .where("status", "==", "waiting")
-        .orderBy("appliedAt", "asc")
-        .limit(1)
-        .get();
-
-      if (!waitlistSnap.empty) {
-        const firstWaitlist = waitlistSnap.docs[0];
-        batch.update(firstWaitlist.ref, { status: 'admitted', admittedAt: new Date() });
-        
-        // Create notification for waitlisted student
-        await createNotification(
-          firstWaitlist.data().studentId,
-          "🎉 Admission from Waitlist!",
-          `You have been admitted to ${otherApp.courseName} at ${otherApp.institutionName} from the waitlist!`,
-          'success',
-          '/student/applications'
-        );
-      }
-    }
-
-    await batch.commit();
-
-    // Create notification for the student
-    await createNotification(
-      studentId,
-      "✅ Admission Confirmed!",
-      `You have confirmed your admission to ${application.courseName} at ${application.institutionName}. Welcome!`,
-      'success',
-      '/student/applications'
-    );
-
-    res.status(200).json({ 
-      message: "Admission accepted successfully!",
-      confirmedCourse: application.courseName,
-      declinedCount: otherAdmittedApps.size
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

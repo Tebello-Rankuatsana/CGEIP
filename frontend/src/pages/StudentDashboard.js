@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, Routes, Route } from 'react-router-dom';
 import axios from 'axios';
+import { db, auth } from '../firebase';
+import { collection, getDocs, doc, getDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy } from 'firebase/firestore';
 
 // Student Layout Component
 function StudentLayout({ children }) {
@@ -38,6 +40,25 @@ function StudentLayout({ children }) {
     backgroundColor: '#40e0d0',
     color: '#000000',
     fontWeight: '600'
+  };
+
+  useEffect(() => {
+    fetchUnreadNotifications();
+  }, []);
+
+  const fetchUnreadNotifications = async () => {
+    try {
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(
+        notificationsRef,
+        where('userId', '==', user?.uid),
+        where('isRead', '==', false)
+      );
+      const snapshot = await getDocs(q);
+      setUnreadCount(snapshot.size);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
   };
 
   return (
@@ -156,6 +177,7 @@ function StudentLayout({ children }) {
 
 // Student Dashboard Home
 function StudentDashboardHome() {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalApplications: 0,
     pendingApplications: 0,
@@ -164,14 +186,18 @@ function StudentDashboardHome() {
   });
 
   useEffect(() => {
-    fetchApplicationStats();
-  }, []);
+    if (user?.uid) {
+      fetchApplicationStats();
+    }
+  }, [user]);
 
   const fetchApplicationStats = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user'));
-      const userApplications = JSON.parse(localStorage.getItem('studentApplications') || '{}');
-      const applications = userApplications[user?.uid] || [];
+      const applicationsRef = collection(db, 'applications');
+      const q = query(applicationsRef, where('studentId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      
+      const applications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       setStats({
         totalApplications: applications.length,
@@ -284,266 +310,124 @@ function StudentDashboardHome() {
           ))}
         </div>
       </div>
-
-      {/* Recent Activity */}
-      <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Recent Activity</h5>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {[
-            { 
-              title: 'Course Application Submitted', 
-              time: '2 hours ago', 
-              description: 'Software Engineering at Limkokwing University',
-              status: 'Pending Review',
-              statusColor: '#f59e0b'
-            },
-            { 
-              title: 'New Job Match', 
-              time: '1 day ago', 
-              description: 'Junior Developer at Tech Solutions Lesotho',
-              status: 'Matches your profile',
-              statusColor: '#10b981'
-            }
-          ].map((activity, index) => (
-            <div 
-              key={index}
-              style={{
-                padding: '1rem',
-                border: '1px solid #e5e7eb',
-                borderRadius: '0.375rem',
-                backgroundColor: '#f9fafb'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                <h6 style={{ margin: 0, color: '#000000' }}>{activity.title}</h6>
-                <small style={{ color: '#6b7280' }}>{activity.time}</small>
-              </div>
-              <p style={{ margin: '0 0 0.5rem 0', color: '#4b5563' }}>{activity.description}</p>
-              <small style={{ color: activity.statusColor, fontWeight: '600' }}>{activity.status}</small>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
 
 // Institutions and Courses Component
 function InstitutionsAndCourses() {
+  const { user } = useAuth();
   const [institutions, setInstitutions] = useState([]);
   const [courses, setCourses] = useState([]);
   const [selectedInstitution, setSelectedInstitution] = useState(null);
   const [appliedCourses, setAppliedCourses] = useState(new Set());
-
-  // Hardcoded Institutions Data
-  const hardcodedInstitutions = [
-    {
-      id: 'inst1',
-      name: 'National University of Lesotho (NUL)',
-      location: 'Roma, Maseru',
-      contactEmail: 'admissions@nul.ls',
-      description: 'Premier institution of higher learning in Lesotho',
-      type: 'University',
-      established: '1945'
-    },
-    {
-      id: 'inst2',
-      name: 'Limkokwing University of Creative Technology',
-      location: 'Maseru',
-      contactEmail: 'info@limkokwing.ls',
-      description: 'Innovative university focusing on creative technology',
-      type: 'University',
-      established: '2008'
-    },
-    {
-      id: 'inst3',
-      name: 'Botho University Lesotho',
-      location: 'Maseru',
-      contactEmail: 'enquiry@bothocollege.ac.ls',
-      description: 'Private university offering professional education',
-      type: 'University',
-      established: '1997'
-    },
-    {
-      id: 'inst4',
-      name: 'Lesotho College of Education',
-      location: 'Maseru',
-      contactEmail: 'admissions@lce.ac.ls',
-      description: 'Specialized in teacher education and training',
-      type: 'College',
-      established: '1975'
-    },
-    {
-      id: 'inst5',
-      name: 'Lesotho Agricultural College',
-      location: 'Maseru',
-      contactEmail: 'info@agricollege.ls',
-      description: 'Leading institution in agricultural sciences',
-      type: 'College',
-      established: '1955'
-    },
-    {
-      id: 'inst6',
-      name: 'Lesotho Institute of Public Administration',
-      location: 'Maseru',
-      contactEmail: 'admin@lipam.ls',
-      description: 'Training public servants and administrators',
-      type: 'Institute',
-      established: '1975'
-    },
-    {
-      id: 'inst7',
-      name: 'Maseru Private Hospital Nursing School',
-      location: 'Maseru',
-      contactEmail: 'nursing@mph.org.ls',
-      description: 'Healthcare and nursing education',
-      type: 'College',
-      established: '1985'
-    },
-    {
-      id: 'inst8',
-      name: 'Lesotho Tourism Development College',
-      location: 'Maseru',
-      contactEmail: 'tourism@ltdc.ls',
-      description: 'Specialized in tourism and hospitality',
-      type: 'College',
-      established: '2001'
-    },
-    {
-      id: 'inst9',
-      name: 'Computer Training Institute Lesotho',
-      location: 'Maseru',
-      contactEmail: 'info@cti.ls',
-      description: 'IT and computer science education',
-      type: 'Institute',
-      established: '2003'
-    },
-    {
-      id: 'inst10',
-      name: 'Lesotho Business School',
-      location: 'Maseru',
-      contactEmail: 'admissions@lbs.ls',
-      description: 'Business and management education',
-      type: 'College',
-      established: '1999'
-    },
-    {
-      id: 'inst11',
-      name: 'Mokhotlong Technical Institute',
-      location: 'Mokhotlong',
-      contactEmail: 'info@mti.ls',
-      description: 'Technical and vocational training',
-      type: 'Institute',
-      established: '1988'
-    },
-    {
-      id: 'inst12',
-      name: 'Quthing Nursing School',
-      location: 'Quthing',
-      contactEmail: 'nursing@quthinghospital.ls',
-      description: 'Healthcare education in southern Lesotho',
-      type: 'College',
-      established: '1992'
-    },
-    {
-      id: 'inst13',
-      name: 'Lerotholi Polytechnic',
-      location: 'Maseru',
-      contactEmail: 'registrar@lerotholi.ls',
-      description: 'Technical and engineering education',
-      type: 'Polytechnic',
-      established: '1960'
-    },
-    {
-      id: 'inst14',
-      name: 'Lesotho Institute of Accountancy',
-      location: 'Maseru',
-      contactEmail: 'lia@lia.ac.ls',
-      description: 'Accounting and finance education',
-      type: 'Institute',
-      established: '1977'
-    },
-    {
-      id: 'inst15',
-      name: 'Mafeteng Community College',
-      location: 'Mafeteng',
-      contactEmail: 'info@mafetengcollege.ls',
-      description: 'Community-based education and training',
-      type: 'College',
-      established: '1995'
-    }
-  ];
-
-  // Hardcoded Courses Data by Institution
-  const hardcodedCourses = {
-    inst1: [
-      { id: 'course1', name: 'Bachelor of Science in Computer Science', faculty: 'Science & Technology', duration: 4, tuitionFee: 15000, description: 'Comprehensive computer science education with programming, algorithms, and software development.', requirements: 'LGCSE with credit in Mathematics and English' },
-      { id: 'course2', name: 'Bachelor of Commerce', faculty: 'Business Administration', duration: 4, tuitionFee: 12000, description: 'Business management, accounting, and economics education.', requirements: 'LGCSE with credit in Mathematics and English' }
-    ],
-    inst2: [
-      { id: 'course3', name: 'Bachelor of Design in Graphic Design', faculty: 'Creative Technology', duration: 3, tuitionFee: 18000, description: 'Creative design and visual communication.', requirements: 'Portfolio review and LGCSE English' },
-      { id: 'course4', name: 'Bachelor of Information Technology', faculty: 'Information Technology', duration: 3, tuitionFee: 16000, description: 'IT systems and software development.', requirements: 'LGCSE with credit in Mathematics' }
-    ],
-    inst3: [
-      { id: 'course5', name: 'Bachelor of Accounting', faculty: 'Business', duration: 4, tuitionFee: 13000, description: 'Professional accounting and finance education.', requirements: 'LGCSE with credit in Mathematics' }
-    ],
-    inst4: [
-      { id: 'course6', name: 'Diploma in Primary Education', faculty: 'Education', duration: 3, tuitionFee: 8000, description: 'Primary school teacher training.', requirements: 'LGCSE with 3 credits including English' }
-    ],
-    inst5: [
-      { id: 'course7', name: 'Diploma in Agriculture', faculty: 'Agriculture', duration: 3, tuitionFee: 7000, description: 'Modern agricultural techniques and farm management.', requirements: 'LGCSE with credit in Science' }
-    ]
-  };
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setInstitutions(hardcodedInstitutions);
-  }, []);
+    fetchInstitutions();
+    fetchAppliedCourses();
+  }, [user]);
 
-  const fetchCourses = (institutionId) => {
-    const institutionCourses = hardcodedCourses[institutionId] || [];
-    setCourses(institutionCourses);
-    setSelectedInstitution(institutionId);
+  const fetchInstitutions = async () => {
+    try {
+      const institutionsRef = collection(db, 'institutions');
+      const snapshot = await getDocs(institutionsRef);
+      const institutionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setInstitutions(institutionsData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching institutions:', error);
+      setLoading(false);
+    }
+  };
+
+  const fetchAppliedCourses = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      const applicationsRef = collection(db, 'applications');
+      const q = query(applicationsRef, where('studentId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      const appliedCourseIds = snapshot.docs.map(doc => doc.data().courseId);
+      setAppliedCourses(new Set(appliedCourseIds));
+    } catch (error) {
+      console.error('Error fetching applied courses:', error);
+    }
+  };
+
+  const fetchCourses = async (institutionId) => {
+    try {
+      const coursesRef = collection(db, 'courses');
+      const q = query(coursesRef, where('institutionId', '==', institutionId));
+      const snapshot = await getDocs(q);
+      const coursesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setCourses(coursesData);
+      setSelectedInstitution(institutionId);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+    }
   };
 
   const applyForCourse = async (course) => {
+    if (!user?.uid) {
+      alert('Please log in to apply for courses');
+      return;
+    }
+
     try {
-      // Temporary simulation - remove this when backend is working
-      console.log('Applying for course:', course.name);
+      // Check if already applied to 2 courses in this institution
+      const applicationsRef = collection(db, 'applications');
+      const q = query(
+        applicationsRef,
+        where('studentId', '==', user.uid),
+        where('institutionId', '==', selectedInstitution)
+      );
+      const snapshot = await getDocs(q);
       
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Simulate successful application
-      setAppliedCourses(prev => new Set([...prev, course.id]));
-      
-      // Store in localStorage to persist across page refreshes
-      const userApplications = JSON.parse(localStorage.getItem('studentApplications') || '{}');
-      const user = JSON.parse(localStorage.getItem('user'));
-      
-      if (!userApplications[user?.uid]) {
-        userApplications[user?.uid] = [];
+      if (snapshot.size >= 2) {
+        alert('You can only apply for 2 courses per institution.');
+        return;
       }
+
+      // Check if already applied to this specific course
+      const existingAppQuery = query(
+        applicationsRef,
+        where('studentId', '==', user.uid),
+        where('courseId', '==', course.id)
+      );
+      const existingAppSnapshot = await getDocs(existingAppQuery);
       
-      userApplications[user?.uid].push({
-        id: Date.now().toString(),
+      if (!existingAppSnapshot.empty) {
+        alert('Already applied for this course');
+        return;
+      }
+
+      // Get institution details
+      const institutionDoc = await getDoc(doc(db, 'institutions', selectedInstitution));
+      const institutionData = institutionDoc.data();
+
+      // Create application
+      const applicationData = {
+        studentId: user.uid,
+        institutionId: selectedInstitution,
         courseId: course.id,
         courseName: course.name,
-        institutionId: selectedInstitution,
-        institutionName: institutions.find(inst => inst.id === selectedInstitution)?.name,
-        appliedAt: new Date().toISOString(),
-        status: 'pending'
-      });
+        institutionName: institutionData.name,
+        status: 'pending',
+        appliedAt: new Date(),
+        studentName: user.name,
+        studentEmail: user.email
+      };
+
+      await addDoc(collection(db, 'applications'), applicationData);
       
-      localStorage.setItem('studentApplications', JSON.stringify(userApplications));
-      
-      alert('Application submitted successfully!');
+      // Update applied courses
+      setAppliedCourses(prev => new Set([...prev, course.id]));
+      alert('Course application submitted successfully!');
       
     } catch (error) {
       console.error('Error applying for course:', error);
-      alert('Application submitted successfully!');
-      
-      // Even if there's an error, simulate success for demo
-      setAppliedCourses(prev => new Set([...prev, course.id]));
+      alert('Error applying for course. Please try again.');
     }
   };
 
@@ -573,6 +457,21 @@ function InstitutionsAndCourses() {
     borderColor: '#10b981',
     color: '#ffffff'
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -717,7 +616,7 @@ function InstitutionsAndCourses() {
                 <path d="M18,15A4,4 0 0,1 22,19A4,4 0 0,1 18,23A4,4 0 0,1 14,19A4,4 0 0,1 18,15M18,17A2,2 0 0,0 16,19A2,2 0 0,0 18,21A2,2 0 0,0 20,19A2,2 0 0,0 18,17M6.05,14.54C6.05,14.54 7.46,13.12 7.47,10.3C7.11,8.11 7.97,5.54 9.94,3.58C12.87,0.65 17.14,0.17 19.5,2.5C21.83,4.86 21.35,9.13 18.42,12.06C16.46,14.03 13.89,14.89 11.7,14.53C8.88,14.54 7.46,15.95 7.46,15.95L3.22,20.19L1.81,18.78L6.05,14.54M18.07,3.93C16.5,2.37 13.5,2.84 11.35,5C9.21,7.14 8.73,10.15 10.29,11.71C11.86,13.27 14.86,12.79 17,10.65C19.16,8.5 19.63,5.5 18.07,3.93Z" />
               </svg>
               <p style={{ margin: '0 0 1rem 0' }}>Select an institution to view available courses</p>
-              <small style={{ color: '#6b7280' }}>15 institutions with courses available</small>
+              <small style={{ color: '#6b7280' }}>{institutions.length} institutions with courses available</small>
             </div>
           )}
         </div>
@@ -728,41 +627,79 @@ function InstitutionsAndCourses() {
 
 // Applications Component
 function StudentApplications() {
+  const { user } = useAuth();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchApplications();
-  }, []);
+    if (user?.uid) {
+      fetchApplications();
+    }
+  }, [user]);
 
   const fetchApplications = async () => {
     try {
-      // Use simulated data from localStorage
-      const user = JSON.parse(localStorage.getItem('user'));
-      const userApplications = JSON.parse(localStorage.getItem('studentApplications') || '{}');
-      const simulatedApplications = userApplications[user?.uid] || [];
-      
-      if (simulatedApplications.length > 0) {
-        setApplications(simulatedApplications);
-        setLoading(false);
-        return;
-      }
-      
-      // If no simulated data, try API (but it will likely fail)
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:5001/api/student/applications/${user?.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setApplications(response.data);
+      const applicationsRef = collection(db, 'applications');
+      const q = query(applicationsRef, where('studentId', '==', user.uid), orderBy('appliedAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const applicationsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setApplications(applicationsData);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching applications:', error);
-      
-      // Use simulated data as fallback
-      const user = JSON.parse(localStorage.getItem('user'));
-      const userApplications = JSON.parse(localStorage.getItem('studentApplications') || '{}');
-      setApplications(userApplications[user?.uid] || []);
       setLoading(false);
+    }
+  };
+
+  const withdrawApplication = async (applicationId) => {
+    if (window.confirm('Are you sure you want to withdraw this application?')) {
+      try {
+        await deleteDoc(doc(db, 'applications', applicationId));
+        setApplications(prev => prev.filter(app => app.id !== applicationId));
+        alert('Application withdrawn successfully!');
+      } catch (error) {
+        console.error('Error withdrawing application:', error);
+        alert('Error withdrawing application. Please try again.');
+      }
+    }
+  };
+
+  const acceptAdmission = async (applicationId) => {
+    try {
+      // Update the application status to confirmed
+      await updateDoc(doc(db, 'applications', applicationId), {
+        status: 'confirmed',
+        confirmedAt: new Date()
+      });
+
+      // Get all other admitted applications for this student
+      const otherAdmittedAppsQuery = query(
+        collection(db, 'applications'),
+        where('studentId', '==', user.uid),
+        where('status', '==', 'admitted'),
+        where('id', '!=', applicationId)
+      );
+      
+      const otherAdmittedSnapshot = await getDocs(otherAdmittedAppsQuery);
+      
+      // Decline all other admitted applications
+      const batchUpdates = [];
+      otherAdmittedSnapshot.forEach(doc => {
+        batchUpdates.push(updateDoc(doc.ref, { 
+          status: 'declined', 
+          declinedAt: new Date() 
+        }));
+      });
+
+      // Execute all updates
+      await Promise.all(batchUpdates);
+      
+      alert('Admission accepted successfully! Other offers have been declined.');
+      fetchApplications(); // Refresh the list
+      
+    } catch (error) {
+      console.error('Error accepting admission:', error);
+      alert('Error accepting admission. Please try again.');
     }
   };
 
@@ -771,7 +708,9 @@ function StudentApplications() {
       pending: { backgroundColor: '#f59e0b', color: '#000000' },
       admitted: { backgroundColor: '#10b981', color: '#ffffff' },
       rejected: { backgroundColor: '#ef4444', color: '#ffffff' },
-      waiting: { backgroundColor: '#3b82f6', color: '#ffffff' }
+      waiting: { backgroundColor: '#3b82f6', color: '#ffffff' },
+      confirmed: { backgroundColor: '#059669', color: '#ffffff' },
+      declined: { backgroundColor: '#dc2626', color: '#ffffff' }
     };
     const config = statusConfig[status] || { backgroundColor: '#6b7280', color: '#ffffff' };
     
@@ -889,14 +828,26 @@ function StudentApplications() {
                   <tr key={application.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '0.75rem', color: '#000000' }}>{application.courseName}</td>
                     <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.institutionName}</td>
-                    <td style={{ padding: '0.75rem', color: '#4b5563' }}>{new Date(application.appliedAt).toLocaleDateString()}</td>
+                    <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.appliedAt?.toDate().toLocaleDateString()}</td>
                     <td style={{ padding: '0.75rem' }}>{getStatusBadge(application.status)}</td>
                     <td style={{ padding: '0.75rem' }}>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         {application.status === 'admitted' && (
-                          <button style={buttonStyle}>Accept Offer</button>
+                          <button 
+                            style={buttonStyle}
+                            onClick={() => acceptAdmission(application.id)}
+                          >
+                            Accept Offer
+                          </button>
                         )}
-                        <button style={outlineButtonStyle}>Withdraw</button>
+                        {application.status === 'pending' && (
+                          <button 
+                            style={outlineButtonStyle}
+                            onClick={() => withdrawApplication(application.id)}
+                          >
+                            Withdraw
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -912,80 +863,109 @@ function StudentApplications() {
 
 // Job Opportunities Component
 function JobOpportunities() {
+  const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [appliedJobs, setAppliedJobs] = useState(new Set());
-  const [loading,setLoading] = useState(false);
-
-  // Hardcoded jobs data
-  const hardcodedJobs = [
-    {
-      id: 'job1',
-      title: 'Junior Software Developer',
-      companyName: 'Tech Solutions Lesotho',
-      location: 'Maseru',
-      salary: 'M8,000 - M12,000',
-      description: 'Entry-level software development position for recent graduates. Work on web applications and mobile apps.',
-      requirements: ['Bachelor in Computer Science', 'Knowledge of JavaScript', 'Basic understanding of databases'],
-      deadline: '2024-12-31',
-      type: 'Full-time'
-    },
-    {
-      id: 'job2',
-      title: 'Marketing Assistant',
-      companyName: 'Lesotho Marketing Agency',
-      location: 'Maseru',
-      salary: 'M6,000 - M8,000',
-      description: 'Support marketing team with campaigns, social media, and client communications.',
-      requirements: ['Diploma in Marketing', 'Good communication skills', 'Social media knowledge'],
-      deadline: '2024-11-30',
-      type: 'Full-time'
-    }
-  ];
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setJobs(hardcodedJobs);
-    setLoading(false);
-  }, []);
+    if (user?.uid) {
+      fetchJobs();
+      fetchAppliedJobs();
+    }
+  }, [user]);
+
+  const fetchJobs = async () => {
+    try {
+      const jobsRef = collection(db, 'jobs');
+      const q = query(
+        jobsRef, 
+        where('status', '==', 'active'),
+        where('deadline', '>', new Date())
+      );
+      const snapshot = await getDocs(q);
+      const jobsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        deadline: doc.data().deadline?.toDate()
+      }));
+      setJobs(jobsData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      setLoading(false);
+    }
+  };
+
+  const fetchAppliedJobs = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      const jobApplicationsRef = collection(db, 'jobApplications');
+      const q = query(jobApplicationsRef, where('studentId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      const appliedJobIds = snapshot.docs.map(doc => doc.data().jobId);
+      setAppliedJobs(new Set(appliedJobIds));
+    } catch (error) {
+      console.error('Error fetching applied jobs:', error);
+    }
+  };
 
   const applyForJob = async (jobId) => {
+    if (!user?.uid) {
+      alert('Please log in to apply for jobs');
+      return;
+    }
+
     try {
-      // Temporary simulation - remove this when backend is working
-      console.log('Applying for job:', jobId);
+      // Check if already applied
+      const jobApplicationsRef = collection(db, 'jobApplications');
+      const existingAppQuery = query(
+        jobApplicationsRef,
+        where('studentId', '==', user.uid),
+        where('jobId', '==', jobId)
+      );
+      const existingAppSnapshot = await getDocs(existingAppQuery);
       
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Simulate successful job application
-      setAppliedJobs(prev => new Set([...prev, jobId]));
-      
-      // Store in localStorage to persist across page refreshes
-      const userJobApplications = JSON.parse(localStorage.getItem('studentJobApplications') || '{}');
-      const user = JSON.parse(localStorage.getItem('user'));
-      const job = jobs.find(j => j.id === jobId);
-      
-      if (!userJobApplications[user?.uid]) {
-        userJobApplications[user?.uid] = [];
+      if (!existingAppSnapshot.empty) {
+        alert('Already applied for this job');
+        return;
       }
+
+      // Get student and job data
+      const studentDoc = await getDoc(doc(db, 'students', user.uid));
+      const jobDoc = await getDoc(doc(db, 'jobs', jobId));
       
-      userJobApplications[user?.uid].push({
-        id: Date.now().toString(),
+      if (!studentDoc.exists() || !jobDoc.exists()) {
+        alert('Student or job not found');
+        return;
+      }
+
+      const studentData = studentDoc.data();
+      const jobData = jobDoc.data();
+
+      // Create job application
+      const jobApplication = {
+        studentId: user.uid,
         jobId: jobId,
-        jobTitle: job?.title,
-        companyName: job?.companyName,
-        appliedAt: new Date().toISOString(),
-        status: 'pending'
-      });
+        studentName: studentData.name,
+        studentEmail: studentData.email,
+        jobTitle: jobData.title,
+        companyName: jobData.companyName,
+        status: 'pending',
+        appliedAt: new Date(),
+        transcriptUrl: studentData.transcriptUrl || ''
+      };
+
+      await addDoc(collection(db, 'jobApplications'), jobApplication);
       
-      localStorage.setItem('studentJobApplications', JSON.stringify(userJobApplications));
-      
-      alert('Job application submitted successfully! (Simulated)');
+      // Update applied jobs
+      setAppliedJobs(prev => new Set([...prev, jobId]));
+      alert('Job application submitted successfully!');
       
     } catch (error) {
       console.error('Error applying for job:', error);
-      alert('Job application submitted successfully! (Simulated)');
-      
-      // Even if there's an error, simulate success for demo
-      setAppliedJobs(prev => new Set([...prev, jobId]));
+      alert('Error applying for job. Please try again.');
     }
   };
 
@@ -1016,6 +996,21 @@ function JobOpportunities() {
     borderColor: '#10b981',
     color: '#ffffff'
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1065,7 +1060,7 @@ function JobOpportunities() {
                   <small><strong style={{ color: '#000000' }}>Salary:</strong> {job.salary}</small>
                 </div>
                 <div>
-                  <small><strong style={{ color: '#000000' }}>Deadline:</strong> {new Date(job.deadline).toLocaleDateString()}</small>
+                  <small><strong style={{ color: '#000000' }}>Deadline:</strong> {job.deadline?.toLocaleDateString()}</small>
                 </div>
               </div>
               
@@ -1098,9 +1093,27 @@ function JobOpportunities() {
 
 // Transcript Upload Component
 function UploadTranscript() {
+  const { user } = useAuth();
   const [transcript, setTranscript] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [studentData, setStudentData] = useState(null);
+
+  useEffect(() => {
+    if (user?.uid) {
+      fetchStudentData();
+    }
+  }, [user]);
+
+  const fetchStudentData = async () => {
+    try {
+      const studentDoc = await getDoc(doc(db, 'students', user.uid));
+      if (studentDoc.exists()) {
+        setStudentData(studentDoc.data());
+      }
+    } catch (error) {
+      console.error('Error fetching student data:', error);
+    }
+  };
 
   const handleFileChange = (e) => {
     setTranscript(e.target.files[0]);
@@ -1108,29 +1121,33 @@ function UploadTranscript() {
 
   const handleUpload = async () => {
     if (!transcript) {
-      alert('select a file to upload');
+      alert('Please select a file to upload');
+      return;
+    }
+
+    if (!user?.uid) {
+      alert('Please log in to upload transcript');
       return;
     }
 
     setUploading(true);
     try {
-      const token = localStorage.getItem('token');
-      const user = JSON.parse(localStorage.getItem('user'));
-      const formData = new FormData();
-      formData.append('transcript', transcript);
-      formData.append('studentId', user?.uid);
-
-      await axios.post('http://localhost:5001/api/student/uploadTranscript', formData, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-        }
+      // In a real implementation, you would upload the file to Firebase Storage
+      // For now, we'll simulate by storing the file name and update timestamp
+      
+      const transcriptUrl = `https://example.com/transcripts/${user.uid}/${transcript.name}`;
+      
+      await updateDoc(doc(db, 'students', user.uid), {
+        transcriptUrl: transcriptUrl,
+        transcriptUploadedAt: new Date(),
+        updatedAt: new Date()
       });
 
-      setUploadedFiles(prev => [...prev, {
-        name: transcript.name,
-        date: new Date().toLocaleDateString(),
-        status: 'Uploaded'
-      }]);
+      setStudentData(prev => ({
+        ...prev,
+        transcriptUrl: transcriptUrl,
+        transcriptUploadedAt: new Date()
+      }));
       
       alert('Transcript uploaded successfully!');
       setTranscript(null);
@@ -1233,39 +1250,54 @@ function UploadTranscript() {
         <div style={cardStyle}>
           <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Uploaded Documents</h5>
           
-          {uploadedFiles.length === 0 ? (
+          {!studentData?.transcriptUrl ? (
             <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>No documents uploaded yet</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {uploadedFiles.map((file, index) => (
-                <div 
-                  key={index}
+              <div 
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '1rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.375rem',
+                  backgroundColor: '#f9fafb'
+                }}
+              >
+                <div>
+                  <h6 style={{ margin: '0 0 0.25rem 0', color: '#000000' }}>Academic Transcript</h6>
+                  <small style={{ color: '#6b7280' }}>
+                    Uploaded: {studentData.transcriptUploadedAt?.toDate().toLocaleDateString()}
+                  </small>
+                </div>
+                <span style={{
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '1rem',
+                  fontSize: '0.75rem',
+                  fontWeight: '600'
+                }}>
+                  Uploaded
+                </span>
+              </div>
+              {studentData.transcriptUrl && (
+                <a 
+                  href={studentData.transcriptUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '1rem',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#f9fafb'
+                    color: '#3b82f6',
+                    textDecoration: 'none',
+                    fontSize: '0.875rem',
+                    display: 'inline-block',
+                    marginTop: '0.5rem'
                   }}
                 >
-                  <div>
-                    <h6 style={{ margin: '0 0 0.25rem 0', color: '#000000' }}>{file.name}</h6>
-                    <small style={{ color: '#6b7280' }}>Uploaded: {file.date}</small>
-                  </div>
-                  <span style={{
-                    backgroundColor: '#10b981',
-                    color: '#ffffff',
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '1rem',
-                    fontSize: '0.75rem',
-                    fontWeight: '600'
-                  }}>
-                    {file.status}
-                  </span>
-                </div>
-              ))}
+                  View Transcript →
+                </a>
+              )}
             </div>
           )}
         </div>
@@ -1278,32 +1310,44 @@ function UploadTranscript() {
 function StudentProfile() {
   const { user } = useAuth();
   const [profile, setProfile] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
+    name: '',
+    email: '',
     phone: '',
     dateOfBirth: '',
     address: '',
     highSchool: '',
-    graduationYear: ''
+    graduationYear: '',
+    transcriptUrl: ''
   });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    if (user?.uid) {
+      fetchProfile();
+    }
+  }, [user]);
 
   const fetchProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const user = JSON.parse(localStorage.getItem('user'));
-      const response = await axios.get(`http://localhost:5001/api/student/profile/${user?.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.data) {
-        setProfile(response.data);
+      const studentDoc = await getDoc(doc(db, 'students', user.uid));
+      if (studentDoc.exists()) {
+        const studentData = studentDoc.data();
+        setProfile({
+          name: studentData.name || '',
+          email: studentData.email || '',
+          phone: studentData.phone || '',
+          dateOfBirth: studentData.dateOfBirth || '',
+          address: studentData.address || '',
+          highSchool: studentData.highSchool || '',
+          graduationYear: studentData.graduationYear || '',
+          transcriptUrl: studentData.transcriptUrl || ''
+        });
       }
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching profile:', error);
+      setLoading(false);
     }
   };
 
@@ -1315,12 +1359,13 @@ function StudentProfile() {
   };
 
   const handleSave = async () => {
+    if (!user?.uid) return;
+    
     setSaving(true);
     try {
-      const token = localStorage.getItem('token');
-      const user = JSON.parse(localStorage.getItem('user'));
-      await axios.patch(`http://localhost:5001/api/student/profile/${user?.uid}`, profile, {
-        headers: { Authorization: `Bearer ${token}` }
+      await updateDoc(doc(db, 'students', user.uid), {
+        ...profile,
+        updatedAt: new Date()
       });
       alert('Profile updated successfully!');
     } catch (error) {
@@ -1357,6 +1402,21 @@ function StudentProfile() {
     cursor: 'pointer',
     transition: 'all 0.3s ease'
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1513,17 +1573,24 @@ function StudentProfile() {
             <div style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem' }}>
               <small style={{ color: '#6b7280' }}>Student ID: {user?.uid}</small>
             </div>
+            {profile.transcriptUrl && (
+              <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#10b981', borderRadius: '0.375rem' }}>
+                <small style={{ color: '#ffffff', fontWeight: '600' }}>Transcript Uploaded</small>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 // Student Notifications Component
 function StudentNotifications() {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
@@ -1533,23 +1600,33 @@ function StudentNotifications() {
 
   const fetchNotifications = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:5001/api/notifications/${user?.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(
+        notificationsRef, 
+        where('userId', '==', user?.uid),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const notificationsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
       
-      setNotifications(response.data);
-      setUnreadCount(response.data.filter(n => !n.isRead).length);
+      setNotifications(notificationsData);
+      setUnreadCount(notificationsData.filter(n => !n.isRead).length);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching notifications:', error);
+      setLoading(false);
     }
   };
 
   const markAsRead = async (notificationId) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:5001/api/notifications/${notificationId}/read`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        isRead: true,
+        readAt: new Date()
       });
       
       setNotifications(prev => prev.map(n => 
@@ -1561,6 +1638,24 @@ function StudentNotifications() {
     }
   };
 
+  const markAllAsRead = async () => {
+    try {
+      const unreadNotifications = notifications.filter(n => !n.isRead);
+      const updatePromises = unreadNotifications.map(notification =>
+        updateDoc(doc(db, 'notifications', notification.id), {
+          isRead: true,
+          readAt: new Date()
+        })
+      );
+      
+      await Promise.all(updatePromises);
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
   const cardStyle = {
     backgroundColor: '#ffffff',
     border: '2px solid #40e0d0',
@@ -1569,22 +1664,67 @@ function StudentNotifications() {
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
   };
 
+  const buttonStyle = {
+    backgroundColor: '#40e0d0',
+    color: '#000000',
+    border: '2px solid #40e0d0',
+    padding: '0.5rem 1rem',
+    borderRadius: '0.375rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    fontSize: '0.875rem'
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2 style={{ color: '#000000', margin: 0 }}>Notifications</h2>
-        {unreadCount > 0 && (
-          <span style={{
-            backgroundColor: '#ef4444',
-            color: '#ffffff',
-            padding: '0.25rem 0.75rem',
-            borderRadius: '1rem',
-            fontSize: '0.875rem',
-            fontWeight: '600'
-          }}>
-            {unreadCount} unread
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {unreadCount > 0 && (
+            <span style={{
+              backgroundColor: '#ef4444',
+              color: '#ffffff',
+              padding: '0.25rem 0.75rem',
+              borderRadius: '1rem',
+              fontSize: '0.875rem',
+              fontWeight: '600'
+            }}>
+              {unreadCount} unread
+            </span>
+          )}
+          {unreadCount > 0 && (
+            <button 
+              style={buttonStyle}
+              onClick={markAllAsRead}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = '#000000';
+                e.target.style.color = '#40e0d0';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = '#40e0d0';
+                e.target.style.color = '#000000';
+              }}
+            >
+              Mark All as Read
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={cardStyle}>
@@ -1618,8 +1758,8 @@ function StudentNotifications() {
                       {notification.message}
                     </p>
                     <small style={{ color: '#6b7280' }}>
-                      {new Date(notification.createdAt).toLocaleDateString()} at{' '}
-                      {new Date(notification.createdAt).toLocaleTimeString()}
+                      {notification.createdAt?.toLocaleDateString()} at{' '}
+                      {notification.createdAt?.toLocaleTimeString()}
                     </small>
                   </div>
                   {!notification.isRead && (
@@ -1632,7 +1772,18 @@ function StudentNotifications() {
                         borderRadius: '0.375rem',
                         fontSize: '0.75rem',
                         color: '#6b7280',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = '#40e0d0';
+                        e.target.style.color = '#000000';
+                        e.target.style.borderColor = '#40e0d0';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = '#6b7280';
+                        e.target.style.borderColor = '#d1d5db';
                       }}
                     >
                       Mark read

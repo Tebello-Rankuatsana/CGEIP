@@ -1,66 +1,10 @@
-// routes/notifications.js
-import express from "express";
-import { db } from "../config/firebase.js";
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "../config/firebase";
 
-const router = express.Router();
-
-// Authentication middleware (same as your other routes)
-const authenticateToken = async (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: "Access token required" });
-    }
-    const decodedToken = await auth.verifyIdToken(token);
-    req.user = decodedToken;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: "Invalid token" });
-  }
-};
-
-// Get notifications for user
-router.get("/:userId", authenticateToken, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const notificationsSnap = await db.collection("notifications")
-      .where("userId", "==", userId)
-      .orderBy("createdAt", "desc")
-      .limit(50)
-      .get();
-
-    const notifications = [];
-    notificationsSnap.forEach(doc => {
-      notifications.push({ id: doc.id, ...doc.data() });
-    });
-
-    res.status(200).json(notifications);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Mark notification as read
-router.patch("/:notificationId/read", authenticateToken, async (req, res) => {
-  try {
-    const { notificationId } = req.params;
-    
-    await db.collection("notifications").doc(notificationId).update({
-      isRead: true,
-      readAt: new Date()
-    });
-
-    res.status(200).json({ message: "Notification marked as read" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Create notification (utility function)
+// Utility function to create notifications
 export const createNotification = async (userId, title, message, type = 'info', link = '') => {
   try {
-    const notificationData = {
+    await addDoc(collection(db, "notifications"), {
       userId,
       title,
       message,
@@ -68,14 +12,47 @@ export const createNotification = async (userId, title, message, type = 'info', 
       link,
       isRead: false,
       createdAt: new Date()
-    };
-
-    await db.collection("notifications").add(notificationData);
-    
-    console.log(`Notification created for user ${userId}: ${title}`);
+    });
+    return true;
   } catch (error) {
     console.error("Error creating notification:", error);
+    return false;
   }
 };
 
-export default router;
+// Get notifications for user
+export const getNotifications = async (userId) => {
+  try {
+    const { collection, query, where, orderBy, getDocs } = await import('firebase/firestore');
+    const notificationsRef = collection(db, "notifications");
+    const q = query(
+      notificationsRef,
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate()
+    }));
+  } catch (error) {
+    console.error("Error getting notifications:", error);
+    return [];
+  }
+};
+
+// Mark notification as read
+export const markNotificationAsRead = async (notificationId) => {
+  try {
+    const { doc, updateDoc } = await import('firebase/firestore');
+    await updateDoc(doc(db, "notifications", notificationId), {
+      isRead: true,
+      readAt: new Date()
+    });
+    return true;
+  } catch (error) {
+    console.error("Error marking notification as read:", error);
+    return false;
+  }
+};

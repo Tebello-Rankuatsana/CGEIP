@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, Routes, Route } from 'react-router-dom';
-import axios from 'axios';
+import { db } from '../firebase';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  addDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  writeBatch
+} from 'firebase/firestore';
 
 // Institute Layout Component
 function InstituteLayout({ children }) {
@@ -147,28 +160,47 @@ function InstituteLayout({ children }) {
 
 // Institute Dashboard Home
 function InstituteDashboardHome() {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalApplications: 0,
     pendingApplications: 0,
     admittedStudents: 0,
     totalCourses: 0
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchDashboardStats();
-  }, []);
+    if (user?.uid) {
+      fetchDashboardStats();
+    }
+  }, [user]);
 
   const fetchDashboardStats = async () => {
     try {
-      // Simulated data for demo
+      const instituteId = user.uid;
+      
+      // Get applications count
+      const applicationsRef = collection(db, 'applications');
+      const applicationsQuery = query(applicationsRef, where('institutionId', '==', instituteId));
+      const applicationsSnapshot = await getDocs(applicationsQuery);
+      
+      // Get courses count
+      const coursesRef = collection(db, 'courses');
+      const coursesQuery = query(coursesRef, where('institutionId', '==', instituteId));
+      const coursesSnapshot = await getDocs(coursesQuery);
+
+      const applications = applicationsSnapshot.docs.map(doc => doc.data());
+      
       setStats({
-        totalApplications: 45,
-        pendingApplications: 12,
-        admittedStudents: 28,
-        totalCourses: 15
+        totalApplications: applications.length,
+        pendingApplications: applications.filter(app => app.status === 'pending').length,
+        admittedStudents: applications.filter(app => app.status === 'admitted' || app.status === 'confirmed').length,
+        totalCourses: coursesSnapshot.size
       });
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching stats:', error);
+      setLoading(false);
     }
   };
 
@@ -188,6 +220,21 @@ function InstituteDashboardHome() {
     { label: 'Admitted Students', value: stats.admittedStudents, color: '#10b981' },
     { label: 'Total Courses', value: stats.totalCourses, color: '#3b82f6' }
   ];
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -278,6 +325,7 @@ function InstituteDashboardHome() {
 
 // Manage Faculties Component
 function ManageFaculties() {
+  const { user } = useAuth();
   const [faculties, setFaculties] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -287,21 +335,20 @@ function ManageFaculties() {
   });
 
   useEffect(() => {
-    fetchFaculties();
-  }, []);
+    if (user?.uid) {
+      fetchFaculties();
+    }
+  }, [user]);
 
   const fetchFaculties = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setFaculties([
-          { id: '1', name: 'Science & Technology', description: 'Science and technology programs' },
-          { id: '2', name: 'Business Administration', description: 'Business and management programs' },
-          { id: '3', name: 'Arts & Humanities', description: 'Arts and humanities programs' }
-        ]);
-        setLoading(false);
-      }, 1000);
+      const facultiesRef = collection(db, 'faculties');
+      const q = query(facultiesRef, where('institutionId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      const facultiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setFaculties(facultiesData);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching faculties:', error);
       setLoading(false);
@@ -317,16 +364,22 @@ function ManageFaculties() {
 
   const handleAddFaculty = async (e) => {
     e.preventDefault();
+    if (!user?.uid) return;
+
     try {
-      // Simulate API call
-      const newFaculty = {
-        id: Date.now().toString(),
-        ...formData
+      const facultyData = {
+        institutionId: user.uid,
+        name: formData.name,
+        description: formData.description,
+        createdAt: new Date()
       };
-      setFaculties(prev => [...prev, newFaculty]);
+
+      await addDoc(collection(db, 'faculties'), facultyData);
+      
       alert('Faculty added successfully!');
       setShowAddForm(false);
       setFormData({ name: '', description: '' });
+      fetchFaculties(); // Refresh the list
     } catch (error) {
       alert('Error adding faculty');
       console.error('Error:', error);
@@ -334,10 +387,21 @@ function ManageFaculties() {
   };
 
   const handleDeleteFaculty = async (id) => {
-    if (window.confirm('Are you sure you want to delete this faculty?')) {
+    if (window.confirm('Are you sure you want to delete this faculty? This will also delete all associated courses.')) {
       try {
-        setFaculties(prev => prev.filter(faculty => faculty.id !== id));
+        // First, check if there are any courses in this faculty
+        const coursesRef = collection(db, 'courses');
+        const coursesQuery = query(coursesRef, where('faculty', '==', faculties.find(f => f.id === id)?.name));
+        const coursesSnapshot = await getDocs(coursesQuery);
+        
+        if (!coursesSnapshot.empty) {
+          alert('Cannot delete faculty. There are courses associated with this faculty. Please delete or reassign the courses first.');
+          return;
+        }
+
+        await deleteDoc(doc(db, 'faculties', id));
         alert('Faculty deleted successfully!');
+        fetchFaculties();
       } catch (error) {
         alert('Error deleting faculty');
         console.error('Error:', error);
@@ -479,6 +543,7 @@ function ManageFaculties() {
               <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Faculty Name</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Description</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Created Date</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
               </tr>
             </thead>
@@ -487,6 +552,9 @@ function ManageFaculties() {
                 <tr key={faculty.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                   <td style={{ padding: '0.75rem', color: '#000000' }}>{faculty.name}</td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{faculty.description}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>
+                    {faculty.createdAt?.toDate().toLocaleDateString()}
+                  </td>
                   <td style={{ padding: '0.75rem' }}>
                     <button 
                       style={deleteButtonStyle}
@@ -515,6 +583,7 @@ function ManageFaculties() {
 
 // Manage Courses Component
 function ManageCourses() {
+  const { user } = useAuth();
   const [courses, setCourses] = useState([]);
   const [faculties, setFaculties] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -531,25 +600,33 @@ function ManageCourses() {
   });
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (user?.uid) {
+      fetchData();
+    }
+  }, [user]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setCourses([
-          { id: '1', name: 'Computer Science', faculty: 'Science & Technology', duration: 4, tuitionFee: 15000, capacity: 50, requirements: 'LGCSE with Mathematics', description: 'Software development and computer systems' },
-          { id: '2', name: 'Business Administration', faculty: 'Business Administration', duration: 3, tuitionFee: 12000, capacity: 40, requirements: 'LGCSE with English', description: 'Business management and entrepreneurship' }
-        ]);
-        setFaculties([
-          { id: '1', name: 'Science & Technology' },
-          { id: '2', name: 'Business Administration' },
-          { id: '3', name: 'Arts & Humanities' }
-        ]);
-        setLoading(false);
-      }, 1000);
+      // Fetch courses
+      const coursesRef = collection(db, 'courses');
+      const coursesQuery = query(coursesRef, where('institutionId', '==', user.uid));
+      const coursesSnapshot = await getDocs(coursesQuery);
+      const coursesData = coursesSnapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
+      setCourses(coursesData);
+
+      // Fetch faculties
+      const facultiesRef = collection(db, 'faculties');
+      const facultiesQuery = query(facultiesRef, where('institutionId', '==', user.uid));
+      const facultiesSnapshot = await getDocs(facultiesQuery);
+      const facultiesData = facultiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setFaculties(facultiesData);
+
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
       setLoading(false);
@@ -565,15 +642,27 @@ function ManageCourses() {
 
   const handleAddCourse = async (e) => {
     e.preventDefault();
+    if (!user?.uid) return;
+
     try {
-      const newCourse = {
-        id: Date.now().toString(),
-        ...formData
+      const courseData = {
+        institutionId: user.uid,
+        name: formData.name,
+        faculty: formData.faculty,
+        duration: parseInt(formData.duration),
+        requirements: formData.requirements,
+        description: formData.description,
+        tuitionFee: parseFloat(formData.tuitionFee),
+        capacity: parseInt(formData.capacity),
+        createdAt: new Date()
       };
-      setCourses(prev => [...prev, newCourse]);
+
+      await addDoc(collection(db, 'courses'), courseData);
+      
       alert('Course added successfully!');
       setShowAddForm(false);
       setFormData({ name: '', faculty: '', duration: '', requirements: '', description: '', tuitionFee: '', capacity: '' });
+      fetchData(); // Refresh the list
     } catch (error) {
       alert('Error adding course');
       console.error('Error:', error);
@@ -585,25 +674,38 @@ function ManageCourses() {
     setFormData({
       name: course.name,
       faculty: course.faculty,
-      duration: course.duration,
+      duration: course.duration.toString(),
       requirements: course.requirements,
       description: course.description,
-      tuitionFee: course.tuitionFee,
-      capacity: course.capacity
+      tuitionFee: course.tuitionFee.toString(),
+      capacity: course.capacity.toString()
     });
     setShowAddForm(true);
   };
 
   const handleUpdateCourse = async (e) => {
     e.preventDefault();
+    if (!editingCourse) return;
+
     try {
-      setCourses(prev => prev.map(course => 
-        course.id === editingCourse.id ? { ...course, ...formData } : course
-      ));
+      const courseData = {
+        name: formData.name,
+        faculty: formData.faculty,
+        duration: parseInt(formData.duration),
+        requirements: formData.requirements,
+        description: formData.description,
+        tuitionFee: parseFloat(formData.tuitionFee),
+        capacity: parseInt(formData.capacity),
+        updatedAt: new Date()
+      };
+
+      await updateDoc(doc(db, 'courses', editingCourse.id), courseData);
+      
       alert('Course updated successfully!');
       setShowAddForm(false);
       setEditingCourse(null);
       setFormData({ name: '', faculty: '', duration: '', requirements: '', description: '', tuitionFee: '', capacity: '' });
+      fetchData(); // Refresh the list
     } catch (error) {
       alert('Error updating course');
       console.error('Error:', error);
@@ -611,10 +713,21 @@ function ManageCourses() {
   };
 
   const handleDeleteCourse = async (id) => {
-    if (window.confirm('Are you sure you want to delete this course?')) {
+    if (window.confirm('Are you sure you want to delete this course? This will also delete all associated applications.')) {
       try {
-        setCourses(prev => prev.filter(course => course.id !== id));
+        // Check if there are any applications for this course
+        const applicationsRef = collection(db, 'applications');
+        const applicationsQuery = query(applicationsRef, where('courseId', '==', id));
+        const applicationsSnapshot = await getDocs(applicationsQuery);
+        
+        if (!applicationsSnapshot.empty) {
+          alert('Cannot delete course. There are applications associated with this course. Please process or delete the applications first.');
+          return;
+        }
+
+        await deleteDoc(doc(db, 'courses', id));
         alert('Course deleted successfully!');
+        fetchData();
       } catch (error) {
         alert('Error deleting course');
         console.error('Error:', error);
@@ -770,6 +883,8 @@ function ManageCourses() {
                   name="duration"
                   value={formData.duration}
                   onChange={handleInputChange}
+                  min="1"
+                  max="6"
                   required
                 />
               </div>
@@ -781,6 +896,8 @@ function ManageCourses() {
                   name="tuitionFee"
                   value={formData.tuitionFee}
                   onChange={handleInputChange}
+                  min="0"
+                  step="0.01"
                   required
                 />
               </div>
@@ -792,6 +909,7 @@ function ManageCourses() {
                   name="capacity"
                   value={formData.capacity}
                   onChange={handleInputChange}
+                  min="1"
                   required
                 />
               </div>
@@ -903,25 +1021,33 @@ function ManageCourses() {
 
 // Student Applications Component
 function StudentApplications() {
+  const { user } = useAuth();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchApplications();
-  }, []);
+    if (user?.uid) {
+      fetchApplications();
+    }
+  }, [user]);
 
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setApplications([
-          { id: '1', studentName: 'John Doe', courseName: 'Computer Science', appliedAt: '2024-01-15', status: 'pending' },
-          { id: '2', studentName: 'Jane Smith', courseName: 'Business Administration', appliedAt: '2024-01-10', status: 'pending' },
-          { id: '3', studentName: 'Mike Johnson', courseName: 'Computer Science', appliedAt: '2024-01-08', status: 'admitted' }
-        ]);
-        setLoading(false);
-      }, 1000);
+      const applicationsRef = collection(db, 'applications');
+      const q = query(
+        applicationsRef, 
+        where('institutionId', '==', user.uid),
+        orderBy('appliedAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const applicationsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        appliedAt: doc.data().appliedAt?.toDate()
+      }));
+      setApplications(applicationsData);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching applications:', error);
       setLoading(false);
@@ -930,10 +1056,64 @@ function StudentApplications() {
 
   const handleUpdateStatus = async (applicationId, status) => {
     try {
-      setApplications(prev => prev.map(app => 
-        app.id === applicationId ? { ...app, status } : app
-      ));
+      const application = applications.find(app => app.id === applicationId);
+      
+      // Check if student is already admitted elsewhere in this institution
+      if (status === 'admitted') {
+        const otherAdmissionsQuery = query(
+          collection(db, 'applications'),
+          where('studentId', '==', application.studentId),
+          where('institutionId', '==', user.uid),
+          where('status', '==', 'admitted')
+        );
+        const otherAdmissionsSnapshot = await getDocs(otherAdmissionsQuery);
+        
+        if (!otherAdmissionsSnapshot.empty) {
+          alert('Student is already admitted to another program at this institution.');
+          return;
+        }
+      }
+
+      await updateDoc(doc(db, 'applications', applicationId), {
+        status: status,
+        updatedAt: new Date(),
+        ...(status === 'admitted' && { admittedAt: new Date() })
+      });
+
+      // Create notification for student
+      let notificationTitle, notificationMessage;
+      
+      switch (status) {
+        case 'admitted':
+          notificationTitle = "🎉 Admission Offer!";
+          notificationMessage = `Congratulations! You have been admitted to ${application.courseName} at ${application.institutionName}`;
+          break;
+        case 'rejected':
+          notificationTitle = "Application Update";
+          notificationMessage = `Your application to ${application.courseName} at ${application.institutionName} has been reviewed`;
+          break;
+        case 'waiting':
+          notificationTitle = "Application Waitlisted";
+          notificationMessage = `Your application to ${application.courseName} has been placed on waitlist`;
+          break;
+        default:
+          notificationTitle = "Application Status Updated";
+          notificationMessage = `Your application status has been updated to ${status}`;
+      }
+
+      // Add notification for student
+      await addDoc(collection(db, 'notifications'), {
+        userId: application.studentId,
+        title: notificationTitle,
+        message: notificationMessage,
+        type: status === 'admitted' ? 'success' : 'info',
+        isRead: false,
+        createdAt: new Date(),
+        link: '/student/applications'
+      });
+
       alert(`Application ${status} successfully!`);
+      fetchApplications(); // Refresh the list
     } catch (error) {
       alert('Error updating application status');
       console.error('Error:', error);
@@ -945,7 +1125,9 @@ function StudentApplications() {
       pending: { backgroundColor: '#f59e0b', color: '#000000' },
       admitted: { backgroundColor: '#10b981', color: '#ffffff' },
       rejected: { backgroundColor: '#ef4444', color: '#ffffff' },
-      waiting: { backgroundColor: '#3b82f6', color: '#ffffff' }
+      waiting: { backgroundColor: '#3b82f6', color: '#ffffff' },
+      confirmed: { backgroundColor: '#059669', color: '#ffffff' },
+      declined: { backgroundColor: '#dc2626', color: '#ffffff' }
     };
     const config = statusConfig[status] || { backgroundColor: '#6b7280', color: '#ffffff' };
     
@@ -1037,67 +1219,56 @@ function StudentApplications() {
                 <tr key={application.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                   <td style={{ padding: '0.75rem', color: '#000000' }}>{application.studentName}</td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.courseName}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{new Date(application.appliedAt).toLocaleDateString()}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.appliedAt?.toLocaleDateString()}</td>
                   <td style={{ padding: '0.75rem' }}>{getStatusBadge(application.status)}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <div style={{ display: 'flex', gap: '0.25rem' }}>
-                      <button 
-                        style={admitButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'admitted')}
-                        disabled={application.status === 'admitted'}
-                        onMouseEnter={(e) => {
-                          if (application.status !== 'admitted') {
-                            e.target.style.backgroundColor = '#10b981';
-                            e.target.style.color = '#ffffff';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (application.status !== 'admitted') {
-                            e.target.style.backgroundColor = 'transparent';
-                            e.target.style.color = '#10b981';
-                          }
-                        }}
-                      >
-                        Admit
-                      </button>
-                      <button 
-                        style={waitlistButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'waiting')}
-                        disabled={application.status === 'waiting'}
-                        onMouseEnter={(e) => {
-                          if (application.status !== 'waiting') {
-                            e.target.style.backgroundColor = '#f59e0b';
-                            e.target.style.color = '#000000';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (application.status !== 'waiting') {
-                            e.target.style.backgroundColor = 'transparent';
-                            e.target.style.color = '#f59e0b';
-                          }
-                        }}
-                      >
-                        Waitlist
-                      </button>
-                      <button 
-                        style={rejectButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'rejected')}
-                        disabled={application.status === 'rejected'}
-                        onMouseEnter={(e) => {
-                          if (application.status !== 'rejected') {
-                            e.target.style.backgroundColor = '#ef4444';
-                            e.target.style.color = '#ffffff';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (application.status !== 'rejected') {
-                            e.target.style.backgroundColor = 'transparent';
-                            e.target.style.color = '#ef4444';
-                          }
-                        }}
-                      >
-                        Reject
-                      </button>
+                      {application.status !== 'admitted' && application.status !== 'confirmed' && application.status !== 'declined' && (
+                        <>
+                          <button 
+                            style={admitButtonStyle}
+                            onClick={() => handleUpdateStatus(application.id, 'admitted')}
+                            onMouseEnter={(e) => {
+                              e.target.style.backgroundColor = '#10b981';
+                              e.target.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.backgroundColor = 'transparent';
+                              e.target.style.color = '#10b981';
+                            }}
+                          >
+                            Admit
+                          </button>
+                          <button 
+                            style={waitlistButtonStyle}
+                            onClick={() => handleUpdateStatus(application.id, 'waiting')}
+                            onMouseEnter={(e) => {
+                              e.target.style.backgroundColor = '#f59e0b';
+                              e.target.style.color = '#000000';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.backgroundColor = 'transparent';
+                              e.target.style.color = '#f59e0b';
+                            }}
+                          >
+                            Waitlist
+                          </button>
+                          <button 
+                            style={rejectButtonStyle}
+                            onClick={() => handleUpdateStatus(application.id, 'rejected')}
+                            onMouseEnter={(e) => {
+                              e.target.style.backgroundColor = '#ef4444';
+                              e.target.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.backgroundColor = 'transparent';
+                              e.target.style.color = '#ef4444';
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1112,24 +1283,48 @@ function StudentApplications() {
 
 // Admissions Component
 function Admissions() {
+  const { user } = useAuth();
   const [admittedStudents, setAdmittedStudents] = useState([]);
+  const [pendingApplications, setPendingApplications] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchAdmittedStudents();
-  }, []);
+    if (user?.uid) {
+      fetchAdmissionsData();
+    }
+  }, [user]);
 
-  const fetchAdmittedStudents = async () => {
+  const fetchAdmissionsData = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setAdmittedStudents([
-          { id: '1', studentName: 'Mike Johnson', courseName: 'Computer Science', admittedAt: '2024-01-20', studentEmail: 'mike@email.com' },
-          { id: '2', studentName: 'Sarah Wilson', courseName: 'Business Administration', admittedAt: '2024-01-18', studentEmail: 'sarah@email.com' }
-        ]);
-        setLoading(false);
-      }, 1000);
+      const instituteId = user.uid;
+      
+      // Fetch admitted students
+      const admittedQuery = query(
+        collection(db, 'applications'),
+        where('institutionId', '==', instituteId),
+        where('status', 'in', ['admitted', 'confirmed']),
+        orderBy('admittedAt', 'desc')
+      );
+      const admittedSnapshot = await getDocs(admittedQuery);
+      const admittedData = admittedSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        admittedAt: doc.data().admittedAt?.toDate(),
+        appliedAt: doc.data().appliedAt?.toDate()
+      }));
+
+      // Fetch pending applications count
+      const pendingQuery = query(
+        collection(db, 'applications'),
+        where('institutionId', '==', instituteId),
+        where('status', '==', 'pending')
+      );
+      const pendingSnapshot = await getDocs(pendingQuery);
+
+      setAdmittedStudents(admittedData);
+      setPendingApplications(pendingSnapshot.size);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching admissions:', error);
       setLoading(false);
@@ -1137,8 +1332,60 @@ function Admissions() {
   };
 
   const handlePublishAdmissions = async () => {
+    if (!user?.uid) return;
+
     try {
-      alert('Admissions published successfully! Students will be notified.');
+      const instituteId = user.uid;
+      
+      // Get institution details
+      const instituteDoc = await getDoc(doc(db, 'institutions', instituteId));
+      const instituteName = instituteDoc.exists() ? instituteDoc.data().name : "Institution";
+
+      // Get all admitted students to notify them
+      const admittedStudentsQuery = query(
+        collection(db, 'applications'),
+        where('institutionId', '==', instituteId),
+        where('status', '==', 'admitted')
+      );
+      const admittedStudentsSnapshot = await getDocs(admittedStudentsQuery);
+
+      // Create notifications for admitted students
+      const notificationPromises = admittedStudentsSnapshot.docs.map(doc => {
+        const application = doc.data();
+        return addDoc(collection(db, 'notifications'), {
+          userId: application.studentId,
+          title: "📢 Admissions Published!",
+          message: `Admission results have been published by ${instituteName}. Check your application status now!`,
+          type: 'info',
+          isRead: false,
+          createdAt: new Date(),
+          link: '/student/applications'
+        });
+      });
+
+      await Promise.all(notificationPromises);
+
+      // Update pending applications to waiting
+      const pendingAppsQuery = query(
+        collection(db, 'applications'),
+        where('institutionId', '==', instituteId),
+        where('status', '==', 'pending')
+      );
+      const pendingAppsSnapshot = await getDocs(pendingAppsQuery);
+
+      const batch = writeBatch(db);
+      pendingAppsSnapshot.docs.forEach(doc => {
+        batch.update(doc.ref, { 
+          status: 'waiting',
+          updatedAt: new Date()
+        });
+      });
+
+      await batch.commit();
+      
+      alert(`Admissions published successfully! ${admittedStudentsSnapshot.size} students admitted and ${pendingAppsSnapshot.size} waitlisted. Students have been notified.`);
+      fetchAdmissionsData(); // Refresh data
+      
     } catch (error) {
       alert('Error publishing admissions');
       console.error('Error:', error);
@@ -1189,30 +1436,36 @@ function Admissions() {
         <button 
           style={buttonStyle}
           onClick={handlePublishAdmissions}
+          disabled={pendingApplications === 0}
           onMouseEnter={(e) => {
-            e.target.style.backgroundColor = '#000000';
-            e.target.style.color = '#40e0d0';
+            if (pendingApplications > 0) {
+              e.target.style.backgroundColor = '#000000';
+              e.target.style.color = '#40e0d0';
+            }
           }}
           onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#40e0d0';
-            e.target.style.color = '#000000';
+            if (pendingApplications > 0) {
+              e.target.style.backgroundColor = '#40e0d0';
+              e.target.style.color = '#000000';
+            }
           }}
         >
           <svg style={{ width: '1rem', height: '1rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
             <path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z" />
           </svg>
-          Publish Admissions
+          Publish Admissions ({pendingApplications} pending)
         </button>
       </div>
 
       <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Admitted Students</h5>
+        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Admitted Students ({admittedStudents.length})</h5>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Student Name</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Course</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Application Date</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Admission Date</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Contact Email</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
@@ -1223,18 +1476,19 @@ function Admissions() {
                 <tr key={student.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                   <td style={{ padding: '0.75rem', color: '#000000' }}>{student.studentName}</td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.courseName}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{new Date(student.admittedAt).toLocaleDateString()}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.appliedAt?.toLocaleDateString()}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.admittedAt?.toLocaleDateString()}</td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.studentEmail}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <span style={{
-                      backgroundColor: '#10b981',
+                      backgroundColor: student.status === 'confirmed' ? '#059669' : '#10b981',
                       color: '#ffffff',
                       padding: '0.25rem 0.75rem',
                       borderRadius: '1rem',
                       fontSize: '0.75rem',
                       fontWeight: '600'
                     }}>
-                      Admitted
+                      {student.status === 'confirmed' ? 'Confirmed' : 'Admitted'}
                     </span>
                   </td>
                 </tr>
@@ -1242,6 +1496,11 @@ function Admissions() {
             </tbody>
           </table>
         </div>
+        {admittedStudents.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>
+            <p>No students admitted yet</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1251,34 +1510,48 @@ function Admissions() {
 function InstituteProfile() {
   const { user } = useAuth();
   const [profile, setProfile] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
+    name: '',
+    email: '',
     address: '',
     contactPerson: '',
     phone: '',
     website: '',
-    description: ''
+    description: '',
+    type: '',
+    location: '',
+    established: ''
   });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    if (user?.uid) {
+      fetchProfile();
+    }
+  }, [user]);
 
   const fetchProfile = async () => {
     try {
-      // Simulated profile data
-      setProfile({
-        name: user?.name || 'National University of Lesotho',
-        email: user?.email || 'admin@nul.ls',
-        address: 'Roma, Maseru, Lesotho',
-        contactPerson: 'Dr. John Smith',
-        phone: '+266 2234 5678',
-        website: 'www.nul.ls',
-        description: 'Premier institution of higher learning in Lesotho offering quality education since 1945.'
-      });
+      const instituteDoc = await getDoc(doc(db, 'institutions', user.uid));
+      if (instituteDoc.exists()) {
+        const instituteData = instituteDoc.data();
+        setProfile({
+          name: instituteData.name || '',
+          email: instituteData.email || '',
+          address: instituteData.address || '',
+          contactPerson: instituteData.contactPerson || '',
+          phone: instituteData.phone || '',
+          website: instituteData.website || '',
+          description: instituteData.description || '',
+          type: instituteData.type || '',
+          location: instituteData.location || '',
+          established: instituteData.established || ''
+        });
+      }
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching profile:', error);
+      setLoading(false);
     }
   };
 
@@ -1290,18 +1563,20 @@ function InstituteProfile() {
   };
 
   const handleSave = async () => {
+    if (!user?.uid) return;
+    
     setSaving(true);
     try {
-      // Simulate API call
-      setTimeout(() => {
-        alert('Profile updated successfully!');
-        setSaving(false);
-      }, 1000);
+      await updateDoc(doc(db, 'institutions', user.uid), {
+        ...profile,
+        updatedAt: new Date()
+      });
+      alert('Profile updated successfully!');
     } catch (error) {
       alert('Error updating profile. Please try again.');
       console.error('Error updating profile:', error);
-      setSaving(false);
     }
+    setSaving(false);
   };
 
   const cardStyle = {
@@ -1337,6 +1612,21 @@ function InstituteProfile() {
     cursor: 'pointer',
     transition: 'all 0.3s ease'
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1394,6 +1684,34 @@ function InstituteProfile() {
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Institution Type</label>
+              <select
+                style={inputStyle}
+                name="type"
+                value={profile.type}
+                onChange={handleChange}
+              >
+                <option value="">Select Type</option>
+                <option value="University">University</option>
+                <option value="College">College</option>
+                <option value="Institute">Institute</option>
+                <option value="Polytechnic">Polytechnic</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Location</label>
+              <input
+                type="text"
+                style={inputStyle}
+                name="location"
+                value={profile.location}
+                onChange={handleChange}
+              />
+            </div>
+          </div>
+
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Address</label>
             <textarea
@@ -1405,7 +1723,7 @@ function InstituteProfile() {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Website</label>
               <input
@@ -1414,6 +1732,18 @@ function InstituteProfile() {
                 name="website"
                 value={profile.website}
                 onChange={handleChange}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Established Year</label>
+              <input
+                type="number"
+                style={inputStyle}
+                name="established"
+                value={profile.established}
+                onChange={handleChange}
+                min="1800"
+                max="2030"
               />
             </div>
           </div>
@@ -1463,8 +1793,19 @@ function InstituteProfile() {
             </div>
             <h5 style={{ color: '#000000', margin: '0 0 0.5rem 0' }}>{profile.name}</h5>
             <p style={{ color: '#6b7280', margin: '0 0 1rem 0' }}>{profile.email}</p>
-            <div style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem' }}>
+            <div style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem', marginBottom: '1rem' }}>
               <small style={{ color: '#6b7280' }}>Institution ID: {user?.uid}</small>
+            </div>
+            <div style={{ textAlign: 'left', fontSize: '0.875rem', color: '#4b5563' }}>
+              <div style={{ marginBottom: '0.5rem' }}>
+                <strong>Type:</strong> {profile.type || 'Not specified'}
+              </div>
+              <div style={{ marginBottom: '0.5rem' }}>
+                <strong>Location:</strong> {profile.location || 'Not specified'}
+              </div>
+              <div>
+                <strong>Established:</strong> {profile.established || 'Not specified'}
+              </div>
             </div>
           </div>
         </div>
