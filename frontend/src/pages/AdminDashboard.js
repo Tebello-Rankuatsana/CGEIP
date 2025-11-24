@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, Routes, Route } from 'react-router-dom';
-import axios from 'axios';
+import { db } from '../firebase';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  addDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  writeBatch
+} from 'firebase/firestore';
 
 // Admin Layout Component
 function AdminLayout({ children }) {
@@ -45,8 +58,8 @@ function AdminLayout({ children }) {
       <div style={sidebarStyle}>
         <div style={{ padding: '1.5rem 1rem', position: 'sticky', top: 0 }}>
           <div style={{ textAlign: 'center', marginBottom: '2rem', paddingBottom: '1rem', borderBottom: '1px solid #374151' }}>
-            <h5 style={{ color: '#40e0d0', margin: '0 0 0.25rem 0' }}>Welcome, {user?.name}</h5>
-            <small style={{ color: '#9ca3af' }}>Admin Dashboard</small>
+            <h5 style={{ color: '#40e0d0', margin: '0 0 0.25rem 0' }}>Admin Dashboard</h5>
+            <small style={{ color: '#9ca3af' }}>System Administrator</small>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             {[
@@ -69,6 +82,15 @@ function AdminLayout({ children }) {
                 label: 'Manage Institutions' 
               },
               { 
+                path: '/admin/students', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z" />
+                  </svg>
+                ), 
+                label: 'Manage Students' 
+              },
+              { 
                 path: '/admin/companies', 
                 icon: (
                   <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
@@ -78,31 +100,31 @@ function AdminLayout({ children }) {
                 label: 'Manage Companies' 
               },
               { 
-                path: '/admin/users', 
+                path: '/admin/applications', 
                 icon: (
                   <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16 17V19H2V17S2 13 9 13 16 17 16 17M12.5 7.5A3.5 3.5 0 1 0 9 11A3.5 3.5 0 0 0 12.5 7.5M15.94 13A5.32 5.32 0 0 1 18 17V19H22V17S22 13.37 15.94 13M15 4A3.39 3.39 0 0 0 13.07 4.59A5 5 0 0 1 13.07 10.41A3.39 3.39 0 0 0 15 11A3.5 3.5 0 0 0 15 4Z" />
+                    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
                   </svg>
                 ), 
-                label: 'User Management' 
+                label: 'All Applications' 
+              },
+              { 
+                path: '/admin/courses', 
+                icon: (
+                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,3L1,9L12,15L21,10.09V17H23V9M5,13.18V17.18C5,17.18 8,16 12,16C16,16 19,17.18 19,17.18V13.18L12,17L5,13.18Z" />
+                  </svg>
+                ), 
+                label: 'All Courses' 
               },
               { 
                 path: '/admin/reports', 
                 icon: (
                   <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M22,21H2V3H4V19H6V10H10V19H12V6H16V19H18V14H22V21Z" />
+                    <path d="M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M7,20H9V14H7V20M11,20H13V12H11V20M15,20H17V16H15V20Z" />
                   </svg>
                 ), 
                 label: 'Reports & Analytics' 
-              },
-              { 
-                path: '/admin/admissions', 
-                icon: (
-                  <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z" />
-                  </svg>
-                ), 
-                label: 'Admissions Monitor' 
               }
             ].map((item) => {
               const isActive = location.pathname === item.path || 
@@ -151,8 +173,11 @@ function AdminDashboardHome() {
     totalInstitutions: 0,
     totalStudents: 0,
     totalCompanies: 0,
-    pendingApprovals: 0
+    totalApplications: 0,
+    pendingCompanies: 0,
+    activeCourses: 0
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchDashboardStats();
@@ -160,20 +185,37 @@ function AdminDashboardHome() {
 
   const fetchDashboardStats = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/dashboard-stats', {
-        headers: { Authorization: `Bearer ${token}` }
+      // Get institutions count
+      const institutionsSnapshot = await getDocs(collection(db, 'institutions'));
+      
+      // Get students count
+      const studentsSnapshot = await getDocs(collection(db, 'students'));
+      
+      // Get companies count
+      const companiesSnapshot = await getDocs(collection(db, 'companies'));
+      
+      // Get applications count
+      const applicationsSnapshot = await getDocs(collection(db, 'applications'));
+      
+      // Get courses count
+      const coursesSnapshot = await getDocs(collection(db, 'courses'));
+
+      // Count pending companies
+      const pendingCompaniesQuery = query(collection(db, 'companies'), where('status', '==', 'pending'));
+      const pendingCompaniesSnapshot = await getDocs(pendingCompaniesQuery);
+
+      setStats({
+        totalInstitutions: institutionsSnapshot.size,
+        totalStudents: studentsSnapshot.size,
+        totalCompanies: companiesSnapshot.size,
+        totalApplications: applicationsSnapshot.size,
+        pendingCompanies: pendingCompaniesSnapshot.size,
+        activeCourses: coursesSnapshot.size
       });
-      setStats(response.data);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching stats:', error);
-      // Fallback data for demo
-      setStats({
-        totalInstitutions: 15,
-        totalStudents: 234,
-        totalCompanies: 8,
-        pendingApprovals: 12
-      });
+      setLoading(false);
     }
   };
 
@@ -191,8 +233,25 @@ function AdminDashboardHome() {
     { label: 'Total Institutions', value: stats.totalInstitutions, color: '#40e0d0' },
     { label: 'Total Students', value: stats.totalStudents, color: '#10b981' },
     { label: 'Total Companies', value: stats.totalCompanies, color: '#3b82f6' },
-    { label: 'Pending Approvals', value: stats.pendingApprovals, color: '#f59e0b' }
+    { label: 'Total Applications', value: stats.totalApplications, color: '#f59e0b' },
+    { label: 'Pending Companies', value: stats.pendingCompanies, color: '#ef4444' },
+    { label: 'Active Courses', value: stats.activeCourses, color: '#8b5cf6' }
   ];
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -200,7 +259,7 @@ function AdminDashboardHome() {
       <p style={{ color: '#6b7280', marginBottom: '2rem' }}>System overview and management</p>
       
       {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {statCards.map((stat, index) => (
           <div 
             key={index}
@@ -228,14 +287,15 @@ function AdminDashboardHome() {
       </div>
 
       {/* Quick Actions */}
-      <div style={{ ...cardStyle, marginBottom: '2rem' }}>
+      <div style={{ ...cardStyle }}>
         <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Quick Actions</h5>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           {[
             { path: '/admin/institutions', label: 'Manage Institutions', color: '#40e0d0' },
-            { path: '/admin/companies', label: 'Approve Companies', color: '#10b981' },
-            { path: '/admin/reports', label: 'View Reports', color: '#3b82f6' },
-            { path: '/admin/admissions', label: 'Monitor Admissions', outline: true }
+            { path: '/admin/students', label: 'Manage Students', color: '#10b981' },
+            { path: '/admin/companies', label: 'Approve Companies', color: '#3b82f6' },
+            { path: '/admin/courses', label: 'View All Courses', color: '#f59e0b' },
+            { path: '/admin/reports', label: 'View Reports', outline: true }
           ].map((action, index) => (
             <Link
               key={index}
@@ -277,53 +337,6 @@ function AdminDashboardHome() {
           ))}
         </div>
       </div>
-
-      {/* Recent Activity */}
-      <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Recent System Activity</h5>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {[
-            { 
-              title: 'New Institution Registration', 
-              time: '1 hour ago', 
-              description: 'National University of Lesotho',
-              status: 'Pending approval',
-              statusColor: '#f59e0b'
-            },
-            { 
-              title: 'Company Account Suspended', 
-              time: '3 hours ago', 
-              description: 'Tech Solutions Lesotho',
-              status: 'Violation of terms',
-              statusColor: '#ef4444'
-            },
-            { 
-              title: 'Student Applications Processed', 
-              time: '5 hours ago', 
-              description: '45 applications reviewed',
-              status: 'Completed',
-              statusColor: '#10b981'
-            }
-          ].map((activity, index) => (
-            <div 
-              key={index}
-              style={{
-                padding: '1rem',
-                border: '1px solid #e5e7eb',
-                borderRadius: '0.375rem',
-                backgroundColor: '#f9fafb'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                <h6 style={{ margin: 0, color: '#000000' }}>{activity.title}</h6>
-                <small style={{ color: '#6b7280' }}>{activity.time}</small>
-              </div>
-              <p style={{ margin: '0 0 0.5rem 0', color: '#4b5563' }}>{activity.description}</p>
-              <small style={{ color: activity.statusColor, fontWeight: '600' }}>{activity.status}</small>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -333,14 +346,14 @@ function ManageInstitutions() {
   const [institutions, setInstitutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingInstitution, setEditingInstitution] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    address: '',
+    type: '',
+    location: '',
     contactPerson: '',
     phone: '',
-    website: ''
+    status: 'active'
   });
 
   useEffect(() => {
@@ -348,21 +361,19 @@ function ManageInstitutions() {
   }, []);
 
   const fetchInstitutions = async () => {
+    setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/institutions', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setInstitutions(response.data);
+      const institutionsRef = collection(db, 'institutions');
+      const snapshot = await getDocs(institutionsRef);
+      const institutionsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
+      setInstitutions(institutionsData);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching institutions:', error);
-      // Fallback data for demo
-      setInstitutions([
-        { id: '1', name: 'National University of Lesotho', email: 'admissions@nul.ls', contactPerson: 'Dr. John Smith', phone: '+266 22340601', status: 'active' },
-        { id: '2', name: 'Limkokwing University', email: 'info@limkokwing.ls', contactPerson: 'Ms. Sarah Johnson', phone: '+266 28345678', status: 'active' },
-        { id: '3', name: 'Botho University', email: 'enquiry@bothocollege.ac.ls', contactPerson: 'Mr. David Brown', phone: '+266 22315678', status: 'pending' }
-      ]);
       setLoading(false);
     }
   };
@@ -377,80 +388,58 @@ function ManageInstitutions() {
   const handleAddInstitution = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/admin/institutions', formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      // In a real app, you would create both Auth user and Firestore document
+      // For demo, we'll just add to Firestore
+      const institutionData = {
+        ...formData,
+        createdAt: new Date(),
+        role: 'institution'
+      };
+
+      await addDoc(collection(db, 'institutions'), institutionData);
+      
       alert('Institution added successfully!');
       setShowAddForm(false);
-      setFormData({ name: '', email: '', address: '', contactPerson: '', phone: '', website: '' });
+      setFormData({ name: '', email: '', type: '', location: '', contactPerson: '', phone: '', status: 'active' });
       fetchInstitutions();
     } catch (error) {
-      alert('Institution added successfully! (Simulated)');
-      // Simulate success for demo
-      const newInstitution = {
-        id: Date.now().toString(),
-        ...formData,
-        status: 'active'
-      };
-      setInstitutions(prev => [...prev, newInstitution]);
-      setShowAddForm(false);
-      setFormData({ name: '', email: '', address: '', contactPerson: '', phone: '', website: '' });
+      alert('Error adding institution');
+      console.error('Error:', error);
     }
   };
 
-  const handleEditInstitution = (institution) => {
-    setEditingInstitution(institution);
-    setFormData({
-      name: institution.name,
-      email: institution.email,
-      address: institution.address,
-      contactPerson: institution.contactPerson,
-      phone: institution.phone,
-      website: institution.website
-    });
-    setShowAddForm(true);
-  };
-
-  const handleUpdateInstitution = async (e) => {
-    e.preventDefault();
+  const handleStatusChange = async (institutionId, newStatus) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5001/api/admin/institutions/${editingInstitution.id}`, formData, {
-        headers: { Authorization: `Bearer ${token}` }
+      await updateDoc(doc(db, 'institutions', institutionId), {
+        status: newStatus,
+        updatedAt: new Date()
       });
-      alert('Institution updated successfully!');
-      setShowAddForm(false);
-      setEditingInstitution(null);
-      setFormData({ name: '', email: '', address: '', contactPerson: '', phone: '', website: '' });
+      alert(`Institution ${newStatus} successfully!`);
       fetchInstitutions();
     } catch (error) {
-      alert('Institution updated successfully! (Simulated)');
-      // Simulate success for demo
-      setInstitutions(prev => prev.map(inst => 
-        inst.id === editingInstitution.id 
-          ? { ...inst, ...formData }
-          : inst
-      ));
-      setShowAddForm(false);
-      setEditingInstitution(null);
-      setFormData({ name: '', email: '', address: '', contactPerson: '', phone: '', website: '' });
+      alert('Error updating institution status');
+      console.error('Error:', error);
     }
   };
 
   const handleDeleteInstitution = async (id) => {
-    if (window.confirm('Are you sure you want to delete this institution?')) {
+    if (window.confirm('Are you sure you want to delete this institution? This will remove all associated data.')) {
       try {
-        const token = localStorage.getItem('token');
-        await axios.delete(`http://localhost:5001/api/admin/institutions/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        // Check if institution has courses
+        const coursesQuery = query(collection(db, 'courses'), where('institutionId', '==', id));
+        const coursesSnapshot = await getDocs(coursesQuery);
+        
+        if (!coursesSnapshot.empty) {
+          alert('Cannot delete institution. There are courses associated with this institution.');
+          return;
+        }
+
+        await deleteDoc(doc(db, 'institutions', id));
         alert('Institution deleted successfully!');
         fetchInstitutions();
       } catch (error) {
-        alert('Institution deleted successfully! (Simulated)');
-        // Simulate success for demo
-        setInstitutions(prev => prev.filter(inst => inst.id !== id));
+        alert('Error deleting institution');
+        console.error('Error:', error);
       }
     }
   };
@@ -467,22 +456,41 @@ function ManageInstitutions() {
     backgroundColor: '#40e0d0',
     color: '#000000',
     border: '2px solid #40e0d0',
-    padding: '0.5rem 1rem',
+    padding: '0.75rem 1.5rem',
     borderRadius: '0.375rem',
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.3s ease'
   };
 
-  const outlineButtonStyle = {
-    backgroundColor: 'transparent',
-    color: '#374151',
-    border: '2px solid #d1d5db',
-    padding: '0.5rem 1rem',
+  const statusButtonStyle = (status) => ({
+    backgroundColor: status === 'active' ? '#10b981' : '#ef4444',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.375rem 0.75rem',
     borderRadius: '0.375rem',
-    fontWeight: '600',
+    fontSize: '0.875rem',
     cursor: 'pointer',
-    transition: 'all 0.3s ease'
+    marginRight: '0.5rem'
+  });
+
+  const deleteButtonStyle = {
+    backgroundColor: 'transparent',
+    color: '#ef4444',
+    border: '1px solid #ef4444',
+    padding: '0.375rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    cursor: 'pointer'
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '0.375rem',
+    backgroundColor: '#ffffff',
+    fontSize: '0.875rem'
   };
 
   if (loading) {
@@ -505,15 +513,11 @@ function ManageInstitutions() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Manage Institutions</h2>
-          <p style={{ color: '#6b7280', margin: 0 }}>Add, edit, or remove higher learning institutions</p>
+          <p style={{ color: '#6b7280' }}>Add, edit, or remove higher learning institutions</p>
         </div>
         <button 
           style={buttonStyle}
-          onClick={() => {
-            setShowAddForm(true);
-            setEditingInstitution(null);
-            setFormData({ name: '', email: '', address: '', contactPerson: '', phone: '', website: '' });
-          }}
+          onClick={() => setShowAddForm(true)}
           onMouseEnter={(e) => {
             e.target.style.backgroundColor = '#000000';
             e.target.style.color = '#40e0d0';
@@ -523,142 +527,105 @@ function ManageInstitutions() {
             e.target.style.color = '#000000';
           }}
         >
+          <svg style={{ width: '1rem', height: '1rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+          </svg>
           Add Institution
         </button>
       </div>
 
       {showAddForm && (
         <div style={{ ...cardStyle, marginBottom: '2rem' }}>
-          <h5 style={{ color: '#000000', marginBottom: '1.5rem' }}>{editingInstitution ? 'Edit Institution' : 'Add New Institution'}</h5>
-          <form onSubmit={editingInstitution ? handleUpdateInstitution : handleAddInstitution}>
+          <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Add New Institution</h5>
+          <form onSubmit={handleAddInstitution}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Institution Name</label>
                 <input
                   type="text"
+                  style={inputStyle}
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#ffffff'
-                  }}
                 />
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Email</label>
                 <input
                   type="email"
+                  style={inputStyle}
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#ffffff'
-                  }}
                 />
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Address</label>
-                <input
-                  type="text"
-                  name="address"
-                  value={formData.address}
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Type</label>
+                <select
+                  style={inputStyle}
+                  name="type"
+                  value={formData.type}
                   onChange={handleInputChange}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#ffffff'
-                  }}
-                />
+                >
+                  <option value="">Select Type</option>
+                  <option value="University">University</option>
+                  <option value="College">College</option>
+                  <option value="Institute">Institute</option>
+                  <option value="Polytechnic">Polytechnic</option>
+                </select>
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Contact Person</label>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Location</label>
                 <input
                   type="text"
-                  name="contactPerson"
-                  value={formData.contactPerson}
+                  style={inputStyle}
+                  name="location"
+                  value={formData.location}
                   onChange={handleInputChange}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#ffffff'
-                  }}
                 />
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Contact Person</label>
+                <input
+                  type="text"
+                  style={inputStyle}
+                  name="contactPerson"
+                  value={formData.contactPerson}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Phone</label>
                 <input
                   type="tel"
+                  style={inputStyle}
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#ffffff'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Website</label>
-                <input
-                  type="url"
-                  name="website"
-                  value={formData.website}
-                  onChange={handleInputChange}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '0.375rem',
-                    backgroundColor: '#ffffff'
-                  }}
                 />
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="submit" style={buttonStyle}>
-                {editingInstitution ? 'Update Institution' : 'Add Institution'}
-              </button>
+              <button type="submit" style={buttonStyle}>Add Institution</button>
               <button 
                 type="button" 
-                style={outlineButtonStyle}
-                onClick={() => {
-                  setShowAddForm(false);
-                  setEditingInstitution(null);
+                style={{
+                  ...buttonStyle,
+                  backgroundColor: 'transparent',
+                  color: '#6b7280',
+                  borderColor: '#d1d5db'
                 }}
-                onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = '#40e0d0';
-                  e.target.style.color = '#000000';
-                  e.target.style.borderColor = '#40e0d0';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = 'transparent';
-                  e.target.style.color = '#374151';
-                  e.target.style.borderColor = '#d1d5db';
-                }}
+                onClick={() => setShowAddForm(false)}
               >
                 Cancel
               </button>
@@ -668,15 +635,14 @@ function ManageInstitutions() {
       )}
 
       <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1.5rem' }}>Institutions List</h5>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Name</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Institution Name</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Email</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Contact Person</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Phone</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Type</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Location</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
               </tr>
@@ -686,11 +652,11 @@ function ManageInstitutions() {
                 <tr key={institution.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                   <td style={{ padding: '0.75rem', color: '#000000' }}>{institution.name}</td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{institution.email}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{institution.contactPerson}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{institution.phone}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{institution.type}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{institution.location}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <span style={{
-                      backgroundColor: institution.status === 'active' ? '#10b981' : '#f59e0b',
+                      backgroundColor: institution.status === 'active' ? '#10b981' : '#ef4444',
                       color: '#ffffff',
                       padding: '0.25rem 0.75rem',
                       borderRadius: '1rem',
@@ -703,32 +669,22 @@ function ManageInstitutions() {
                   <td style={{ padding: '0.75rem' }}>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button 
-                        style={{
-                          backgroundColor: 'transparent',
-                          color: '#3b82f6',
-                          border: '1px solid #3b82f6',
-                          padding: '0.375rem 0.75rem',
-                          borderRadius: '0.375rem',
-                          fontSize: '0.875rem',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => handleEditInstitution(institution)}
+                        style={statusButtonStyle(institution.status === 'active' ? 'suspended' : 'active')}
+                        onClick={() => handleStatusChange(institution.id, institution.status === 'active' ? 'suspended' : 'active')}
                       >
-                        Edit
+                        {institution.status === 'active' ? 'Suspend' : 'Activate'}
                       </button>
                       <button 
-                        style={{
-                          backgroundColor: 'transparent',
-                          color: '#ef4444',
-                          border: '1px solid #ef4444',
-                          padding: '0.375rem 0.75rem',
-                          borderRadius: '0.375rem',
-                          fontSize: '0.875rem',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
+                        style={deleteButtonStyle}
                         onClick={() => handleDeleteInstitution(institution.id)}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = '#ef4444';
+                          e.target.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'transparent';
+                          e.target.style.color = '#ef4444';
+                        }}
                       >
                         Delete
                       </button>
@@ -744,87 +700,638 @@ function ManageInstitutions() {
   );
 }
 
+// Manage Students Component
+function ManageStudents() {
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+
+  useEffect(() => {
+    fetchStudents();
+  }, [filter]);
+
+  const fetchStudents = async () => {
+    setLoading(true);
+    try {
+      const studentsRef = collection(db, 'students');
+      let studentsQuery;
+
+      if (filter === 'with-transcript') {
+        studentsQuery = query(studentsRef, where('transcriptUrl', '!=', ''));
+      } else if (filter === 'without-transcript') {
+        studentsQuery = query(studentsRef, where('transcriptUrl', '==', ''));
+      } else {
+        studentsQuery = studentsRef;
+      }
+
+      const snapshot = await getDocs(studentsQuery);
+      const studentsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
+      setStudents(studentsData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching students:', error);
+      setLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (studentId, newStatus) => {
+    try {
+      await updateDoc(doc(db, 'students', studentId), {
+        status: newStatus,
+        updatedAt: new Date()
+      });
+      alert(`Student ${newStatus} successfully!`);
+      fetchStudents();
+    } catch (error) {
+      alert('Error updating student status');
+      console.error('Error:', error);
+    }
+  };
+
+  const getApplicationStats = async (studentId) => {
+    try {
+      const applicationsQuery = query(
+        collection(db, 'applications'),
+        where('studentId', '==', studentId)
+      );
+      const snapshot = await getDocs(applicationsQuery);
+      const applications = snapshot.docs.map(doc => doc.data());
+      
+      return {
+        total: applications.length,
+        admitted: applications.filter(app => app.status === 'admitted' || app.status === 'confirmed').length,
+        pending: applications.filter(app => app.status === 'pending').length
+      };
+    } catch (error) {
+      return { total: 0, admitted: 0, pending: 0 };
+    }
+  };
+
+  const cardStyle = {
+    backgroundColor: '#ffffff',
+    border: '2px solid #40e0d0',
+    borderRadius: '0.5rem',
+    padding: '1.5rem',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+  };
+
+  const statusButtonStyle = (status) => ({
+    backgroundColor: status === 'active' ? '#10b981' : '#ef4444',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.375rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    marginRight: '0.5rem'
+  });
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div>
+          <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Manage Students</h2>
+          <p style={{ color: '#6b7280' }}>View and manage student accounts</p>
+        </div>
+        <div>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{
+              padding: '0.5rem 0.75rem',
+              border: '1px solid #d1d5db',
+              borderRadius: '0.375rem',
+              backgroundColor: '#ffffff',
+              fontSize: '0.875rem'
+            }}
+          >
+            <option value="all">All Students</option>
+            <option value="with-transcript">With Transcript</option>
+            <option value="without-transcript">Without Transcript</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Student Name</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Email</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>High School</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Graduation Year</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Transcript</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map(student => (
+                <tr key={student.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '0.75rem', color: '#000000' }}>{student.name}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.email}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.highSchool || 'Not specified'}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{student.graduationYear || 'Not specified'}</td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <span style={{
+                      backgroundColor: student.transcriptUrl ? '#10b981' : '#6b7280',
+                      color: '#ffffff',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '1rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '600'
+                    }}>
+                      {student.transcriptUrl ? 'Uploaded' : 'Not Uploaded'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <span style={{
+                      backgroundColor: student.status === 'active' ? '#10b981' : '#ef4444',
+                      color: '#ffffff',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '1rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '600'
+                    }}>
+                      {student.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <button 
+                      style={statusButtonStyle(student.status === 'active' ? 'suspended' : 'active')}
+                      onClick={() => handleStatusChange(student.id, student.status === 'active' ? 'suspended' : 'active')}
+                    >
+                      {student.status === 'active' ? 'Suspend' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Manage Companies Component
 function ManageCompanies() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     fetchCompanies();
-  }, []);
+  }, [filter]);
 
   const fetchCompanies = async () => {
+    setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/companies', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setCompanies(response.data);
+      const companiesRef = collection(db, 'companies');
+      let companiesQuery;
+
+      if (filter !== 'all') {
+        companiesQuery = query(companiesRef, where('status', '==', filter));
+      } else {
+        companiesQuery = companiesRef;
+      }
+
+      const snapshot = await getDocs(companiesQuery);
+      const companiesData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
+      setCompanies(companiesData);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching companies:', error);
-      // Fallback data for demo
-      setCompanies([
-        { id: '1', name: 'Tech Solutions Lesotho', industry: 'Technology', email: 'hr@techsolutions.ls', website: 'www.techsolutions.ls', status: 'approved' },
-        { id: '2', name: 'Lesotho Marketing Agency', industry: 'Marketing', email: 'info@lma.ls', website: 'www.lma.ls', status: 'pending' },
-        { id: '3', name: 'Mountain View Enterprises', industry: 'Construction', email: 'contact@mve.ls', website: 'www.mve.ls', status: 'suspended' }
-      ]);
       setLoading(false);
     }
   };
 
-  const handleApproveCompany = async (companyId) => {
+  const handleStatusChange = async (companyId, newStatus) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5001/api/admin/companies/${companyId}/approve`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
+      await updateDoc(doc(db, 'companies', companyId), {
+        status: newStatus,
+        updatedAt: new Date()
       });
-      alert('Company approved successfully!');
+      alert(`Company ${newStatus} successfully!`);
       fetchCompanies();
     } catch (error) {
-      alert('Company approved successfully! (Simulated)');
-      // Simulate success for demo
-      setCompanies(prev => prev.map(company => 
-        company.id === companyId 
-          ? { ...company, status: 'approved' }
-          : company
-      ));
+      alert('Error updating company status');
+      console.error('Error:', error);
     }
   };
 
-  const handleSuspendCompany = async (companyId) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5001/api/admin/companies/${companyId}/suspend`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert('Company suspended successfully!');
-      fetchCompanies();
-    } catch (error) {
-      alert('Company suspended successfully! (Simulated)');
-      // Simulate success for demo
-      setCompanies(prev => prev.map(company => 
-        company.id === companyId 
-          ? { ...company, status: 'suspended' }
-          : company
-      ));
-    }
-  };
-
-  const handleDeleteCompany = async (companyId) => {
-    if (window.confirm('Are you sure you want to delete this company?')) {
+  const handleDeleteCompany = async (id) => {
+    if (window.confirm('Are you sure you want to delete this company? This will remove all associated data.')) {
       try {
-        const token = localStorage.getItem('token');
-        await axios.delete(`http://localhost:5001/api/admin/companies/${companyId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        // Check if company has job postings
+        const jobsQuery = query(collection(db, 'jobs'), where('companyId', '==', id));
+        const jobsSnapshot = await getDocs(jobsQuery);
+        
+        if (!jobsSnapshot.empty) {
+          alert('Cannot delete company. There are job postings associated with this company.');
+          return;
+        }
+
+        await deleteDoc(doc(db, 'companies', id));
         alert('Company deleted successfully!');
         fetchCompanies();
       } catch (error) {
-        alert('Company deleted successfully! (Simulated)');
-        // Simulate success for demo
-        setCompanies(prev => prev.filter(company => company.id !== companyId));
+        alert('Error deleting company');
+        console.error('Error:', error);
       }
+    }
+  };
+
+  const cardStyle = {
+    backgroundColor: '#ffffff',
+    border: '2px solid #40e0d0',
+    borderRadius: '0.5rem',
+    padding: '1.5rem',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+  };
+
+  const approveButtonStyle = {
+    backgroundColor: '#10b981',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.375rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    marginRight: '0.5rem'
+  };
+
+  const rejectButtonStyle = {
+    backgroundColor: '#ef4444',
+    color: '#ffffff',
+    border: 'none',
+    padding: '0.375rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    marginRight: '0.5rem'
+  };
+
+  const deleteButtonStyle = {
+    backgroundColor: 'transparent',
+    color: '#ef4444',
+    border: '1px solid #ef4444',
+    padding: '0.375rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    cursor: 'pointer'
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div>
+          <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Manage Companies</h2>
+          <p style={{ color: '#6b7280' }}>Approve, suspend, or remove company accounts</p>
+        </div>
+        <div>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{
+              padding: '0.5rem 0.75rem',
+              border: '1px solid #d1d5db',
+              borderRadius: '0.375rem',
+              backgroundColor: '#ffffff',
+              fontSize: '0.875rem'
+            }}
+          >
+            <option value="all">All Companies</option>
+            <option value="pending">Pending Approval</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Company Name</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Email</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Industry</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Location</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Contact Person</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {companies.map(company => (
+                <tr key={company.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '0.75rem', color: '#000000' }}>{company.name}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.email}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.industry}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.location}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.contactPerson}</td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <span style={{
+                      backgroundColor: 
+                        company.status === 'active' ? '#10b981' : 
+                        company.status === 'pending' ? '#f59e0b' : '#ef4444',
+                      color: '#ffffff',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '1rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '600'
+                    }}>
+                      {company.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {company.status === 'pending' && (
+                        <>
+                          <button 
+                            style={approveButtonStyle}
+                            onClick={() => handleStatusChange(company.id, 'active')}
+                          >
+                            Approve
+                          </button>
+                          <button 
+                            style={rejectButtonStyle}
+                            onClick={() => handleStatusChange(company.id, 'suspended')}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {company.status === 'active' && (
+                        <button 
+                          style={rejectButtonStyle}
+                          onClick={() => handleStatusChange(company.id, 'suspended')}
+                        >
+                          Suspend
+                        </button>
+                      )}
+                      {company.status === 'suspended' && (
+                        <button 
+                          style={approveButtonStyle}
+                          onClick={() => handleStatusChange(company.id, 'active')}
+                        >
+                          Activate
+                        </button>
+                      )}
+                      <button 
+                        style={deleteButtonStyle}
+                        onClick={() => handleDeleteCompany(company.id)}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = '#ef4444';
+                          e.target.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'transparent';
+                          e.target.style.color = '#ef4444';
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// All Applications Component
+function AllApplications() {
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+
+  useEffect(() => {
+    fetchApplications();
+  }, [filter]);
+
+  const fetchApplications = async () => {
+    setLoading(true);
+    try {
+      const applicationsRef = collection(db, 'applications');
+      let applicationsQuery;
+
+      if (filter !== 'all') {
+        applicationsQuery = query(applicationsRef, where('status', '==', filter));
+      } else {
+        applicationsQuery = query(applicationsRef, orderBy('appliedAt', 'desc'));
+      }
+
+      const snapshot = await getDocs(applicationsQuery);
+      const applicationsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        appliedAt: doc.data().appliedAt?.toDate(),
+        admittedAt: doc.data().admittedAt?.toDate()
+      }));
+      setApplications(applicationsData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching applications:', error);
+      setLoading(false);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      pending: { backgroundColor: '#f59e0b', color: '#000000' },
+      admitted: { backgroundColor: '#10b981', color: '#ffffff' },
+      rejected: { backgroundColor: '#ef4444', color: '#ffffff' },
+      waiting: { backgroundColor: '#3b82f6', color: '#ffffff' },
+      confirmed: { backgroundColor: '#059669', color: '#ffffff' },
+      declined: { backgroundColor: '#dc2626', color: '#ffffff' }
+    };
+    const config = statusConfig[status] || { backgroundColor: '#6b7280', color: '#ffffff' };
+    
+    return (
+      <span style={{
+        backgroundColor: config.backgroundColor,
+        color: config.color,
+        padding: '0.25rem 0.75rem',
+        borderRadius: '1rem',
+        fontSize: '0.75rem',
+        fontWeight: '600'
+      }}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    );
+  };
+
+  const cardStyle = {
+    backgroundColor: '#ffffff',
+    border: '2px solid #40e0d0',
+    borderRadius: '0.5rem',
+    padding: '1.5rem',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div>
+          <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>All Applications</h2>
+          <p style={{ color: '#6b7280' }}>Monitor all course applications across institutions</p>
+        </div>
+        <div>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{
+              padding: '0.5rem 0.75rem',
+              border: '1px solid #d1d5db',
+              borderRadius: '0.375rem',
+              backgroundColor: '#ffffff',
+              fontSize: '0.875rem'
+            }}
+          >
+            <option value="all">All Applications</option>
+            <option value="pending">Pending</option>
+            <option value="admitted">Admitted</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="waiting">Waiting List</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Student</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Course</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Institution</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Application Date</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {applications.map(application => (
+                <tr key={application.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '0.75rem', color: '#000000' }}>
+                    <div>
+                      <div style={{ fontWeight: '600' }}>{application.studentName}</div>
+                      <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>{application.studentEmail}</div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.courseName}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.institutionName}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.appliedAt?.toLocaleDateString()}</td>
+                  <td style={{ padding: '0.75rem' }}>{getStatusBadge(application.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// All Courses Component
+function AllCourses() {
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [institutions, setInstitutions] = useState({});
+
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  const fetchCourses = async () => {
+    setLoading(true);
+    try {
+      const coursesRef = collection(db, 'courses');
+      const snapshot = await getDocs(coursesRef);
+      const coursesData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
+      setCourses(coursesData);
+
+      // Get institution names
+      const institutionIds = [...new Set(coursesData.map(course => course.institutionId))];
+      const institutionPromises = institutionIds.map(id => getDoc(doc(db, 'institutions', id)));
+      const institutionSnapshots = await Promise.all(institutionPromises);
+      
+      const institutionsMap = {};
+      institutionSnapshots.forEach((snap, index) => {
+        if (snap.exists()) {
+          institutionsMap[institutionIds[index]] = snap.data().name;
+        }
+      });
+      
+      setInstitutions(institutionsMap);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      setLoading(false);
     }
   };
 
@@ -853,97 +1360,31 @@ function ManageCompanies() {
 
   return (
     <div>
-      <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Manage Companies</h2>
-      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Approve, suspend, or remove company accounts</p>
+      <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>All Courses</h2>
+      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>View all courses offered across institutions</p>
 
       <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1.5rem' }}>Companies List</h5>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Company Name</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Industry</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Contact Email</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Website</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Course Name</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Faculty</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Institution</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Duration</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Tuition Fee</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Capacity</th>
               </tr>
             </thead>
             <tbody>
-              {companies.map(company => (
-                <tr key={company.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ padding: '0.75rem', color: '#000000' }}>{company.name}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.industry}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.email}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{company.website}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <span style={{
-                      backgroundColor: 
-                        company.status === 'approved' ? '#10b981' : 
-                        company.status === 'pending' ? '#f59e0b' : '#ef4444',
-                      color: '#ffffff',
-                      padding: '0.25rem 0.75rem',
-                      borderRadius: '1rem',
-                      fontSize: '0.75rem',
-                      fontWeight: '600'
-                    }}>
-                      {company.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      {company.status === 'pending' && (
-                        <button 
-                          style={{
-                            backgroundColor: '#10b981',
-                            color: '#ffffff',
-                            border: 'none',
-                            padding: '0.375rem 0.75rem',
-                            borderRadius: '0.375rem',
-                            fontSize: '0.875rem',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                          onClick={() => handleApproveCompany(company.id)}
-                        >
-                          Approve
-                        </button>
-                      )}
-                      {company.status === 'approved' && (
-                        <button 
-                          style={{
-                            backgroundColor: '#f59e0b',
-                            color: '#000000',
-                            border: 'none',
-                            padding: '0.375rem 0.75rem',
-                            borderRadius: '0.375rem',
-                            fontSize: '0.875rem',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                          onClick={() => handleSuspendCompany(company.id)}
-                        >
-                          Suspend
-                        </button>
-                      )}
-                      <button 
-                        style={{
-                          backgroundColor: '#ef4444',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '0.375rem 0.75rem',
-                          borderRadius: '0.375rem',
-                          fontSize: '0.875rem',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => handleDeleteCompany(company.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+              {courses.map(course => (
+                <tr key={course.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  <td style={{ padding: '0.75rem', color: '#000000' }}>{course.name}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{course.faculty}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{institutions[course.institutionId] || 'Unknown'}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{course.duration} years</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>M{course.tuitionFee}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{course.capacity}</td>
                 </tr>
               ))}
             </tbody>
@@ -954,43 +1395,57 @@ function ManageCompanies() {
   );
 }
 
-// Reports Component
-function Reports() {
-  const [reports, setReports] = useState({
-    totalApplications: 0,
-    admissionRate: 0,
-    popularCourses: [],
-    institutionStats: []
-  });
+// Reports & Analytics Component
+function ReportsAnalytics() {
+  const [reports, setReports] = useState({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchReports();
   }, []);
 
   const fetchReports = async () => {
+    setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5001/api/admin/reports', {
-        headers: { Authorization: `Bearer ${token}` }
+      // Get total counts
+      const institutionsSnapshot = await getDocs(collection(db, 'institutions'));
+      const studentsSnapshot = await getDocs(collection(db, 'students'));
+      const companiesSnapshot = await getDocs(collection(db, 'companies'));
+      const coursesSnapshot = await getDocs(collection(db, 'courses'));
+      const applicationsSnapshot = await getDocs(collection(db, 'applications'));
+      const jobsSnapshot = await getDocs(collection(db, 'jobs'));
+
+      // Get application status breakdown
+      const applications = applicationsSnapshot.docs.map(doc => doc.data());
+      const applicationStatus = {
+        pending: applications.filter(app => app.status === 'pending').length,
+        admitted: applications.filter(app => app.status === 'admitted').length,
+        confirmed: applications.filter(app => app.status === 'confirmed').length,
+        waiting: applications.filter(app => app.status === 'waiting').length,
+        rejected: applications.filter(app => app.status === 'rejected').length
+      };
+
+      // Get students with transcripts
+      const studentsWithTranscriptsQuery = query(
+        collection(db, 'students'),
+        where('transcriptUrl', '!=', '')
+      );
+      const studentsWithTranscriptsSnapshot = await getDocs(studentsWithTranscriptsQuery);
+
+      setReports({
+        totalInstitutions: institutionsSnapshot.size,
+        totalStudents: studentsSnapshot.size,
+        totalCompanies: companiesSnapshot.size,
+        totalCourses: coursesSnapshot.size,
+        totalApplications: applicationsSnapshot.size,
+        totalJobs: jobsSnapshot.size,
+        studentsWithTranscripts: studentsWithTranscriptsSnapshot.size,
+        applicationStatus
       });
-      setReports(response.data);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching reports:', error);
-      // Fallback data for demo
-      setReports({
-        totalApplications: 156,
-        admissionRate: 68,
-        popularCourses: [
-          { name: 'Computer Science', applications: 45 },
-          { name: 'Business Administration', applications: 38 },
-          { name: 'Engineering', applications: 32 }
-        ],
-        institutionStats: [
-          { name: 'National University of Lesotho', totalCourses: 25, applications: 89, admissionRate: 72 },
-          { name: 'Limkokwing University', totalCourses: 18, applications: 45, admissionRate: 65 },
-          { name: 'Botho University', totalCourses: 12, applications: 22, admissionRate: 58 }
-        ]
-      });
+      setLoading(false);
     }
   };
 
@@ -1002,66 +1457,128 @@ function Reports() {
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
   };
 
+  const statCardStyle = {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '0.5rem',
+    padding: '1.5rem',
+    textAlign: 'center'
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Reports & Analytics</h2>
-      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>System-wide statistics and insights</p>
+      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>System-wide statistics and analytics</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+      {/* Summary Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        <div style={statCardStyle}>
+          <h3 style={{ color: '#40e0d0', margin: '0 0 0.5rem 0', fontSize: '2rem' }}>{reports.totalInstitutions}</h3>
+          <p style={{ color: '#6b7280', margin: 0 }}>Institutions</p>
+        </div>
+        <div style={statCardStyle}>
+          <h3 style={{ color: '#10b981', margin: '0 0 0.5rem 0', fontSize: '2rem' }}>{reports.totalStudents}</h3>
+          <p style={{ color: '#6b7280', margin: 0 }}>Students</p>
+        </div>
+        <div style={statCardStyle}>
+          <h3 style={{ color: '#3b82f6', margin: '0 0 0.5rem 0', fontSize: '2rem' }}>{reports.totalCompanies}</h3>
+          <p style={{ color: '#6b7280', margin: 0 }}>Companies</p>
+        </div>
+        <div style={statCardStyle}>
+          <h3 style={{ color: '#f59e0b', margin: '0 0 0.5rem 0', fontSize: '2rem' }}>{reports.totalCourses}</h3>
+          <p style={{ color: '#6b7280', margin: 0 }}>Courses</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+        {/* Application Statistics */}
         <div style={cardStyle}>
           <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Application Statistics</h5>
-          <div style={{ marginBottom: '0.75rem' }}>
-            <strong style={{ color: '#000000' }}>Total Applications:</strong> {reports.totalApplications}
-          </div>
-          <div>
-            <strong style={{ color: '#000000' }}>Admission Rate:</strong> {reports.admissionRate}%
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Total Applications</span>
+              <strong style={{ color: '#000000' }}>{reports.totalApplications}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Pending</span>
+              <strong style={{ color: '#f59e0b' }}>{reports.applicationStatus.pending}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Admitted</span>
+              <strong style={{ color: '#10b981' }}>{reports.applicationStatus.admitted}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Confirmed</span>
+              <strong style={{ color: '#059669' }}>{reports.applicationStatus.confirmed}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Waitlisted</span>
+              <strong style={{ color: '#3b82f6' }}>{reports.applicationStatus.waiting}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Rejected</span>
+              <strong style={{ color: '#ef4444' }}>{reports.applicationStatus.rejected}</strong>
+            </div>
           </div>
         </div>
+
+        {/* Student Statistics */}
         <div style={cardStyle}>
-          <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Popular Courses</h5>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {reports.popularCourses.map((course, index) => (
-              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: '#000000' }}>{course.name}</span>
-                <span style={{
-                  backgroundColor: '#40e0d0',
-                  color: '#000000',
-                  padding: '0.25rem 0.75rem',
-                  borderRadius: '1rem',
-                  fontSize: '0.75rem',
-                  fontWeight: '600'
-                }}>
-                  {course.applications} applications
-                </span>
-              </div>
-            ))}
+          <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Student Statistics</h5>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Total Students</span>
+              <strong style={{ color: '#000000' }}>{reports.totalStudents}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>With Transcripts</span>
+              <strong style={{ color: '#10b981' }}>{reports.studentsWithTranscripts}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Without Transcripts</span>
+              <strong style={{ color: '#ef4444' }}>{reports.totalStudents - reports.studentsWithTranscripts}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#4b5563' }}>Transcript Upload Rate</span>
+              <strong style={{ color: '#3b82f6' }}>
+                {reports.totalStudents > 0 ? 
+                  ((reports.studentsWithTranscripts / reports.totalStudents) * 100).toFixed(1) + '%' : '0%'
+                }
+              </strong>
+            </div>
           </div>
         </div>
       </div>
 
-      <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1.5rem' }}>Institution Statistics</h5>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Institution</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Total Courses</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Applications</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Admission Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.institutionStats.map((stat, index) => (
-                <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ padding: '0.75rem', color: '#000000' }}>{stat.name}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{stat.totalCourses}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{stat.applications}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{stat.admissionRate}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Job Statistics */}
+      <div style={{ ...cardStyle, marginTop: '1.5rem' }}>
+        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Job & Career Statistics</h5>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+          <div style={statCardStyle}>
+            <h3 style={{ color: '#8b5cf6', margin: '0 0 0.5rem 0', fontSize: '2rem' }}>{reports.totalJobs}</h3>
+            <p style={{ color: '#6b7280', margin: 0 }}>Active Job Postings</p>
+          </div>
+          <div style={statCardStyle}>
+            <h3 style={{ color: '#06b6d4', margin: '0 0 0.5rem 0', fontSize: '2rem' }}>
+              {reports.totalCompanies}
+            </h3>
+            <p style={{ color: '#6b7280', margin: 0 }}>Partner Companies</p>
+          </div>
         </div>
       </div>
     </div>
@@ -1075,8 +1592,11 @@ function AdminDashboard() {
       <Routes>
         <Route path="/" element={<AdminDashboardHome />} />
         <Route path="/institutions" element={<ManageInstitutions />} />
+        <Route path="/students" element={<ManageStudents />} />
         <Route path="/companies" element={<ManageCompanies />} />
-        <Route path="/reports" element={<Reports />} />
+        <Route path="/applications" element={<AllApplications />} />
+        <Route path="/courses" element={<AllCourses />} />
+        <Route path="/reports" element={<ReportsAnalytics />} />
       </Routes>
     </AdminLayout>
   );
