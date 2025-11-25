@@ -255,7 +255,7 @@ function Navbar() {
       </div>
 
       {/* Custom Styles */}
-      <style jsx>{`
+      <style>{`
         @media (max-width: 991.98px) {
           .navbar-collapse {
             background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
