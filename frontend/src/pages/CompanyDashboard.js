@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, Routes, Route } from 'react-router-dom';
-import axios from 'axios';
+import { db } from '../firebase';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  addDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy
+} from 'firebase/firestore';
 
 // Company Layout Component
 function CompanyLayout({ children }) {
@@ -72,19 +84,19 @@ function CompanyLayout({ children }) {
                 path: '/company/applications', 
                 icon: (
                   <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16,4C18.21,4 20,5.79 20,8C20,10.21 18.21,12 16,12C13.79,12 12,10.21 12,8C12,5.79 13.79,4 16,4M16,6C14.9,6 14,6.9 14,8C14,9.1 14.9,10 16,10C17.1,10 18,9.1 18,8C18,6.9 17.1,6 16,6M16,13C14.67,13 12,13.67 12,15V16H20V15C20,13.67 17.33,13 16,13M4,8C4,10.21 5.79,12 8,12C10.21,12 12,10.21 12,8C12,5.79 10.21,4 8,4C5.79,4 4,5.79 4,8M6,8C6,6.9 6.9,6 8,6C9.1,6 10,6.9 10,8C10,9.1 9.1,10 8,10C6.9,10 6,9.1 6,8M4,14C2.67,14 0,14.67 0,16V17H8V16C8,14.67 5.33,14 4,14Z" />
+                    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
                   </svg>
                 ), 
                 label: 'Job Applications' 
               },
               { 
-                path: '/company/qualified', 
+                path: '/company/qualified-applicants', 
                 icon: (
                   <svg style={{ width: '1.25rem', height: '1.25rem', marginRight: '0.5rem' }} viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" />
+                    <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z" />
                   </svg>
                 ), 
-                label: 'Qualified Candidates' 
+                label: 'Qualified Applicants' 
               },
               { 
                 path: '/company/profile', 
@@ -138,28 +150,72 @@ function CompanyLayout({ children }) {
 
 // Company Dashboard Home
 function CompanyDashboardHome() {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalJobs: 0,
     activeJobs: 0,
     totalApplications: 0,
-    qualifiedCandidates: 0
+    qualifiedApplicants: 0,
+    interviewCandidates: 0
   });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchDashboardStats();
-  }, []);
+    if (user?.uid) {
+      fetchDashboardStats();
+    }
+  }, [user]);
 
   const fetchDashboardStats = async () => {
     try {
-      // Simulated data for demo
+      const companyId = user.uid;
+      
+      // Get jobs count
+      const jobsRef = collection(db, 'jobs');
+      const jobsQuery = query(jobsRef, where('companyId', '==', companyId));
+      const jobsSnapshot = await getDocs(jobsQuery);
+      
+      // Get active jobs count
+      const activeJobsQuery = query(
+        jobsRef, 
+        where('companyId', '==', companyId),
+        where('status', '==', 'active'),
+        where('deadline', '>', new Date())
+      );
+      const activeJobsSnapshot = await getDocs(activeJobsQuery);
+
+      // Get total applications
+      const applicationsRef = collection(db, 'jobApplications');
+      const applicationsQuery = query(applicationsRef, where('companyId', '==', companyId));
+      const applicationsSnapshot = await getDocs(applicationsQuery);
+
+      // Get qualified applicants (applications with transcripts)
+      const qualifiedApplicantsQuery = query(
+        applicationsRef,
+        where('companyId', '==', companyId),
+        where('transcriptUrl', '!=', '')
+      );
+      const qualifiedApplicantsSnapshot = await getDocs(qualifiedApplicantsQuery);
+
+      // Get interview candidates
+      const interviewCandidatesQuery = query(
+        applicationsRef,
+        where('companyId', '==', companyId),
+        where('status', '==', 'shortlisted')
+      );
+      const interviewCandidatesSnapshot = await getDocs(interviewCandidatesQuery);
+
       setStats({
-        totalJobs: 8,
-        activeJobs: 5,
-        totalApplications: 42,
-        qualifiedCandidates: 15
+        totalJobs: jobsSnapshot.size,
+        activeJobs: activeJobsSnapshot.size,
+        totalApplications: applicationsSnapshot.size,
+        qualifiedApplicants: qualifiedApplicantsSnapshot.size,
+        interviewCandidates: interviewCandidatesSnapshot.size
       });
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching stats:', error);
+      setLoading(false);
     }
   };
 
@@ -174,19 +230,35 @@ function CompanyDashboardHome() {
   };
 
   const statCards = [
-    { label: 'Total Jobs', value: stats.totalJobs, color: '#40e0d0' },
-    { label: 'Active Jobs', value: stats.activeJobs, color: '#10b981' },
+    { label: 'Total Jobs Posted', value: stats.totalJobs, color: '#40e0d0' },
+    { label: 'Active Job Postings', value: stats.activeJobs, color: '#10b981' },
     { label: 'Total Applications', value: stats.totalApplications, color: '#3b82f6' },
-    { label: 'Qualified Candidates', value: stats.qualifiedCandidates, color: '#f59e0b' }
+    { label: 'Qualified Applicants', value: stats.qualifiedApplicants, color: '#f59e0b' },
+    { label: 'Interview Candidates', value: stats.interviewCandidates, color: '#8b5cf6' }
   ];
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Company Dashboard</h2>
-      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Manage job postings and find qualified candidates</p>
+      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Manage your job postings and track qualified applicants</p>
       
       {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {statCards.map((stat, index) => (
           <div 
             key={index}
@@ -214,13 +286,13 @@ function CompanyDashboardHome() {
       </div>
 
       {/* Quick Actions */}
-      <div style={{ ...cardStyle, marginBottom: '2rem' }}>
+      <div style={{ ...cardStyle }}>
         <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Quick Actions</h5>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           {[
             { path: '/company/jobs', label: 'Post New Job', color: '#40e0d0' },
             { path: '/company/applications', label: 'View Applications', color: '#10b981' },
-            { path: '/company/qualified', label: 'Find Candidates', color: '#3b82f6' },
+            { path: '/company/qualified-applicants', label: 'Qualified Applicants', color: '#3b82f6' },
             { path: '/company/profile', label: 'Update Profile', outline: true }
           ].map((action, index) => (
             <Link
@@ -263,101 +335,52 @@ function CompanyDashboardHome() {
           ))}
         </div>
       </div>
-
-      {/* Recent Activity */}
-      <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Recent Activity</h5>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {[
-            { 
-              title: 'New Job Application', 
-              time: '2 hours ago', 
-              description: 'Software Developer position',
-              status: 'From qualified candidate',
-              statusColor: '#10b981'
-            },
-            { 
-              title: 'Job Posted', 
-              time: '1 day ago', 
-              description: 'Data Analyst position',
-              status: 'Active - 15 applications',
-              statusColor: '#3b82f6'
-            }
-          ].map((activity, index) => (
-            <div 
-              key={index}
-              style={{
-                padding: '1rem',
-                border: '1px solid #e5e7eb',
-                borderRadius: '0.375rem',
-                backgroundColor: '#f9fafb'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                <h6 style={{ margin: 0, color: '#000000' }}>{activity.title}</h6>
-                <small style={{ color: '#6b7280' }}>{activity.time}</small>
-              </div>
-              <p style={{ margin: '0 0 0.5rem 0', color: '#4b5563' }}>{activity.description}</p>
-              <small style={{ color: activity.statusColor, fontWeight: '600' }}>{activity.status}</small>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
 
 // Manage Jobs Component
 function ManageJobs() {
+  const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [showJobForm, setShowJobForm] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
-    department: '',
-    location: '',
-    salary: '',
-    type: 'full-time',
     description: '',
     requirements: '',
-    qualifications: '',
-    deadline: ''
+    location: '',
+    salary: '',
+    jobType: 'full-time',
+    deadline: '',
+    status: 'active'
   });
 
   useEffect(() => {
-    fetchJobs();
-  }, []);
+    if (user?.uid) {
+      fetchJobs();
+    }
+  }, [user]);
 
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setJobs([
-          { 
-            id: '1', 
-            title: 'Software Developer', 
-            department: 'Engineering', 
-            location: 'Maseru', 
-            type: 'full-time', 
-            applicationCount: 12, 
-            status: 'active',
-            salary: 'M8,000 - M12,000'
-          },
-          { 
-            id: '2', 
-            title: 'Data Analyst', 
-            department: 'Analytics', 
-            location: 'Maseru', 
-            type: 'full-time', 
-            applicationCount: 8, 
-            status: 'active',
-            salary: 'M6,000 - M9,000'
-          }
-        ]);
-        setLoading(false);
-      }, 1000);
+      const jobsRef = collection(db, 'jobs');
+      const jobsQuery = query(
+        jobsRef,
+        where('companyId', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(jobsQuery);
+      const jobsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        deadline: doc.data().deadline?.toDate(),
+        createdAt: doc.data().createdAt?.toDate()
+      }));
+      setJobs(jobsData);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching jobs:', error);
       setLoading(false);
@@ -365,28 +388,51 @@ function ManageJobs() {
   };
 
   const handleInputChange = (e) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: value
+    });
+  };
+
+  const handleRequirementsChange = (e) => {
+    const requirements = e.target.value.split('\n').filter(req => req.trim() !== '');
+    setFormData({
+      ...formData,
+      requirements: requirements
     });
   };
 
   const handleAddJob = async (e) => {
     e.preventDefault();
+    if (!user?.uid) return;
+
     try {
-      const newJob = {
-        id: Date.now().toString(),
+      const jobData = {
+        companyId: user.uid,
+        companyName: user.name,
         ...formData,
-        applicationCount: 0,
-        status: 'active'
+        salary: formData.salary,
+        deadline: new Date(formData.deadline),
+        createdAt: new Date(),
+        applications: 0
       };
-      setJobs(prev => [...prev, newJob]);
+
+      await addDoc(collection(db, 'jobs'), jobData);
+      
       alert('Job posted successfully!');
-      setShowAddForm(false);
+      setShowJobForm(false);
       setFormData({
-        title: '', department: '', location: '', salary: '', type: 'full-time',
-        description: '', requirements: '', qualifications: '', deadline: ''
+        title: '',
+        description: '',
+        requirements: '',
+        location: '',
+        salary: '',
+        jobType: 'full-time',
+        deadline: '',
+        status: 'active'
       });
+      fetchJobs();
     } catch (error) {
       alert('Error posting job');
       console.error('Error:', error);
@@ -397,42 +443,66 @@ function ManageJobs() {
     setEditingJob(job);
     setFormData({
       title: job.title,
-      department: job.department,
+      description: job.description,
+      requirements: Array.isArray(job.requirements) ? job.requirements.join('\n') : job.requirements,
       location: job.location,
       salary: job.salary,
-      type: job.type,
-      description: job.description || '',
-      requirements: job.requirements || '',
-      qualifications: job.qualifications || '',
-      deadline: job.deadline || ''
+      jobType: job.jobType,
+      deadline: job.deadline?.toISOString().split('T')[0],
+      status: job.status
     });
-    setShowAddForm(true);
+    setShowJobForm(true);
   };
 
   const handleUpdateJob = async (e) => {
     e.preventDefault();
+    if (!editingJob) return;
+
     try {
-      setJobs(prev => prev.map(job => 
-        job.id === editingJob.id ? { ...job, ...formData } : job
-      ));
+      const jobData = {
+        ...formData,
+        salary: formData.salary,
+        deadline: new Date(formData.deadline),
+        updatedAt: new Date()
+      };
+
+      await updateDoc(doc(db, 'jobs', editingJob.id), jobData);
+      
       alert('Job updated successfully!');
-      setShowAddForm(false);
+      setShowJobForm(false);
       setEditingJob(null);
       setFormData({
-        title: '', department: '', location: '', salary: '', type: 'full-time',
-        description: '', requirements: '', qualifications: '', deadline: ''
+        title: '',
+        description: '',
+        requirements: '',
+        location: '',
+        salary: '',
+        jobType: 'full-time',
+        deadline: '',
+        status: 'active'
       });
+      fetchJobs();
     } catch (error) {
       alert('Error updating job');
       console.error('Error:', error);
     }
   };
 
-  const handleDeleteJob = async (id) => {
-    if (window.confirm('Are you sure you want to delete this job posting?')) {
+  const handleDeleteJob = async (jobId) => {
+    if (window.confirm('Are you sure you want to delete this job? This will also delete all associated applications.')) {
       try {
-        setJobs(prev => prev.filter(job => job.id !== id));
+        // Check if there are applications for this job
+        const applicationsQuery = query(collection(db, 'jobApplications'), where('jobId', '==', jobId));
+        const applicationsSnapshot = await getDocs(applicationsQuery);
+        
+        if (!applicationsSnapshot.empty) {
+          alert('Cannot delete job. There are applications associated with this job.');
+          return;
+        }
+
+        await deleteDoc(doc(db, 'jobs', jobId));
         alert('Job deleted successfully!');
+        fetchJobs();
       } catch (error) {
         alert('Error deleting job');
         console.error('Error:', error);
@@ -440,13 +510,14 @@ function ManageJobs() {
     }
   };
 
-  const handleToggleJobStatus = async (jobId, currentStatus) => {
-    const newStatus = currentStatus === 'active' ? 'closed' : 'active';
+  const handleStatusChange = async (jobId, newStatus) => {
     try {
-      setJobs(prev => prev.map(job => 
-        job.id === jobId ? { ...job, status: newStatus } : job
-      ));
+      await updateDoc(doc(db, 'jobs', jobId), {
+        status: newStatus,
+        updatedAt: new Date()
+      });
       alert(`Job ${newStatus} successfully!`);
+      fetchJobs();
     } catch (error) {
       alert('Error updating job status');
       console.error('Error:', error);
@@ -484,17 +555,16 @@ function ManageJobs() {
     transition: 'all 0.3s ease'
   };
 
-  const statusButtonStyle = {
-    backgroundColor: 'transparent',
-    color: '#f59e0b',
-    border: '1px solid #f59e0b',
+  const statusButtonStyle = (status) => ({
+    backgroundColor: status === 'active' ? '#10b981' : '#ef4444',
+    color: '#ffffff',
+    border: 'none',
     padding: '0.375rem 0.75rem',
     borderRadius: '0.375rem',
     fontSize: '0.875rem',
     cursor: 'pointer',
-    marginRight: '0.5rem',
-    transition: 'all 0.3s ease'
-  };
+    marginRight: '0.5rem'
+  });
 
   const deleteButtonStyle = {
     backgroundColor: 'transparent',
@@ -516,52 +586,10 @@ function ManageJobs() {
     fontSize: '0.875rem'
   };
 
-  const selectStyle = {
-    ...inputStyle,
-    backgroundColor: '#ffffff'
-  };
-
   const textareaStyle = {
     ...inputStyle,
     resize: 'vertical',
-    minHeight: '80px'
-  };
-
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      active: { backgroundColor: '#10b981', color: '#ffffff' },
-      closed: { backgroundColor: '#6b7280', color: '#ffffff' }
-    };
-    const config = statusConfig[status] || { backgroundColor: '#6b7280', color: '#ffffff' };
-    
-    return (
-      <span style={{
-        backgroundColor: config.backgroundColor,
-        color: config.color,
-        padding: '0.25rem 0.75rem',
-        borderRadius: '1rem',
-        fontSize: '0.75rem',
-        fontWeight: '600'
-      }}>
-        {status}
-      </span>
-    );
-  };
-
-  const getTypeBadge = (type) => {
-    return (
-      <span style={{
-        backgroundColor: '#3b82f6',
-        color: '#ffffff',
-        padding: '0.25rem 0.75rem',
-        borderRadius: '1rem',
-        fontSize: '0.75rem',
-        fontWeight: '600',
-        textTransform: 'capitalize'
-      }}>
-        {type}
-      </span>
-    );
+    minHeight: '100px'
   };
 
   if (loading) {
@@ -584,16 +612,22 @@ function ManageJobs() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Manage Job Postings</h2>
-          <p style={{ color: '#6b7280' }}>Create and manage job opportunities for graduates</p>
+          <p style={{ color: '#6b7280' }}>Create and manage your job opportunities</p>
         </div>
         <button 
           style={buttonStyle}
           onClick={() => {
-            setShowAddForm(true);
+            setShowJobForm(true);
             setEditingJob(null);
             setFormData({
-              title: '', department: '', location: '', salary: '', type: 'full-time',
-              description: '', requirements: '', qualifications: '', deadline: ''
+              title: '',
+              description: '',
+              requirements: '',
+              location: '',
+              salary: '',
+              jobType: 'full-time',
+              deadline: '',
+              status: 'active'
             });
           }}
           onMouseEnter={(e) => {
@@ -612,7 +646,7 @@ function ManageJobs() {
         </button>
       </div>
 
-      {showAddForm && (
+      {showJobForm && (
         <div style={{ ...cardStyle, marginBottom: '2rem' }}>
           <h5 style={{ color: '#000000', marginBottom: '1rem' }}>{editingJob ? 'Edit Job' : 'Post New Job'}</h5>
           <form onSubmit={editingJob ? handleUpdateJob : handleAddJob}>
@@ -629,18 +663,22 @@ function ManageJobs() {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Department</label>
-                <input
-                  type="text"
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Job Type</label>
+                <select
                   style={inputStyle}
-                  name="department"
-                  value={formData.department}
+                  name="jobType"
+                  value={formData.jobType}
                   onChange={handleInputChange}
                   required
-                />
+                >
+                  <option value="full-time">Full Time</option>
+                  <option value="part-time">Part Time</option>
+                  <option value="contract">Contract</option>
+                  <option value="internship">Internship</option>
+                </select>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Location</label>
                 <input
@@ -660,61 +698,35 @@ function ManageJobs() {
                   name="salary"
                   value={formData.salary}
                   onChange={handleInputChange}
+                  placeholder="e.g., M8,000 - M12,000"
                   required
                 />
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Job Type</label>
-                <select
-                  style={selectStyle}
-                  name="type"
-                  value={formData.type}
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="full-time">Full Time</option>
-                  <option value="part-time">Part Time</option>
-                  <option value="contract">Contract</option>
-                  <option value="internship">Internship</option>
-                </select>
-              </div>
             </div>
             <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Job Description</label>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Description</label>
               <textarea
                 style={textareaStyle}
                 name="description"
                 value={formData.description}
                 onChange={handleInputChange}
-                rows="4"
                 required
               />
             </div>
             <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Requirements</label>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>
+                Requirements (one per line)
+              </label>
               <textarea
                 style={textareaStyle}
                 name="requirements"
                 value={formData.requirements}
-                onChange={handleInputChange}
-                rows="3"
+                onChange={handleRequirementsChange}
+                placeholder="Bachelor's degree in Computer Science&#10;2+ years of experience&#10;Knowledge of JavaScript and React"
                 required
-                placeholder="List key requirements (one per line)"
               />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Qualifications</label>
-              <textarea
-                style={textareaStyle}
-                name="qualifications"
-                value={formData.qualifications}
-                onChange={handleInputChange}
-                rows="3"
-                required
-                placeholder="List required qualifications"
-              />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Application Deadline</label>
                 <input
@@ -723,8 +735,22 @@ function ManageJobs() {
                   name="deadline"
                   value={formData.deadline}
                   onChange={handleInputChange}
+                  min={new Date().toISOString().split('T')[0]}
                   required
                 />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Status</label>
+                <select
+                  style={inputStyle}
+                  name="status"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -740,7 +766,7 @@ function ManageJobs() {
                   borderColor: '#d1d5db'
                 }}
                 onClick={() => {
-                  setShowAddForm(false);
+                  setShowJobForm(false);
                   setEditingJob(null);
                 }}
               >
@@ -757,10 +783,10 @@ function ManageJobs() {
             <thead>
               <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Job Title</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Department</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Location</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Type</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Applications</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Location</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Salary</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Deadline</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
               </tr>
@@ -769,24 +795,36 @@ function ManageJobs() {
               {jobs.map(job => (
                 <tr key={job.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
                   <td style={{ padding: '0.75rem', color: '#000000' }}>{job.title}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{job.department}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>
+                    <span style={{
+                      backgroundColor: '#e5e7eb',
+                      color: '#374151',
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      textTransform: 'capitalize'
+                    }}>
+                      {job.jobType}
+                    </span>
+                  </td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{job.location}</td>
-                  <td style={{ padding: '0.75rem' }}>{getTypeBadge(job.type)}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{job.salary}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{job.deadline?.toLocaleDateString()}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <span style={{
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: job.status === 'active' ? '#10b981' : '#6b7280',
                       color: '#ffffff',
                       padding: '0.25rem 0.75rem',
                       borderRadius: '1rem',
                       fontSize: '0.75rem',
                       fontWeight: '600'
                     }}>
-                      {job.applicationCount}
+                      {job.status}
                     </span>
                   </td>
-                  <td style={{ padding: '0.75rem' }}>{getStatusBadge(job.status)}</td>
                   <td style={{ padding: '0.75rem' }}>
-                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button 
                         style={editButtonStyle}
                         onClick={() => handleEditJob(job)}
@@ -802,18 +840,10 @@ function ManageJobs() {
                         Edit
                       </button>
                       <button 
-                        style={statusButtonStyle}
-                        onClick={() => handleToggleJobStatus(job.id, job.status)}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor = '#f59e0b';
-                          e.target.style.color = '#000000';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor = 'transparent';
-                          e.target.style.color = '#f59e0b';
-                        }}
+                        style={statusButtonStyle(job.status === 'active' ? 'inactive' : 'active')}
+                        onClick={() => handleStatusChange(job.id, job.status === 'active' ? 'inactive' : 'active')}
                       >
-                        {job.status === 'active' ? 'Close' : 'Activate'}
+                        {job.status === 'active' ? 'Deactivate' : 'Activate'}
                       </button>
                       <button 
                         style={deleteButtonStyle}
@@ -843,56 +873,59 @@ function ManageJobs() {
 
 // Job Applications Component
 function JobApplications() {
+  const { user } = useAuth();
   const [applications, setApplications] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    fetchApplications();
-  }, []);
+    if (user?.uid) {
+      fetchApplications();
+    }
+  }, [user, filter]);
 
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setApplications([
-          { 
-            id: '1', 
-            candidateName: 'Tebello Rankuatsana', 
-            candidateEmail: 'tr@email.com',
-            jobTitle: 'Software Developer', 
-            appliedAt: '2025-01-15', 
-            status: 'pending',
-            degree: 'BSC In Software Engineering',
-            gpa: '3.6',
-            skills: 'JavaScript, React, Node.js'
-          },
-          { 
-            id: '2', 
-            candidateName: 'Tholoane Mokoena', 
-            candidateEmail: 'tm@email.com',
-            jobTitle: 'Data Analyst', 
-            appliedAt: '2025-01-10', 
-            status: 'reviewed',
-            degree: 'Statistics',
-            gpa: '3.3',
-            skills: 'Python, SQL, Data Visualization'
-          }
-        ]);
-        setLoading(false);
-      }, 1000);
+      const applicationsRef = collection(db, 'jobApplications');
+      let applicationsQuery;
+
+      if (filter !== 'all') {
+        applicationsQuery = query(
+          applicationsRef,
+          where('companyId', '==', user.uid),
+          where('status', '==', filter)
+        );
+      } else {
+        applicationsQuery = query(
+          applicationsRef,
+          where('companyId', '==', user.uid),
+          orderBy('appliedAt', 'desc')
+        );
+      }
+
+      const snapshot = await getDocs(applicationsQuery);
+      const applicationsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        appliedAt: doc.data().appliedAt?.toDate()
+      }));
+      setApplications(applicationsData);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching applications:', error);
       setLoading(false);
     }
   };
 
-  const handleUpdateStatus = async (applicationId, status) => {
+  const handleStatusChange = async (applicationId, newStatus) => {
     try {
-      setApplications(prev => prev.map(app => 
-        app.id === applicationId ? { ...app, status } : app
-      ));
-      alert(`Application ${status} successfully!`);
+      await updateDoc(doc(db, 'jobApplications', applicationId), {
+        status: newStatus,
+        updatedAt: new Date()
+      });
+      alert(`Application ${newStatus} successfully!`);
+      fetchApplications();
     } catch (error) {
       alert('Error updating application status');
       console.error('Error:', error);
@@ -902,8 +935,7 @@ function JobApplications() {
   const getStatusBadge = (status) => {
     const statusConfig = {
       pending: { backgroundColor: '#f59e0b', color: '#000000' },
-      reviewed: { backgroundColor: '#3b82f6', color: '#ffffff' },
-      interviewed: { backgroundColor: '#8b5cf6', color: '#ffffff' },
+      shortlisted: { backgroundColor: '#3b82f6', color: '#ffffff' },
       rejected: { backgroundColor: '#ef4444', color: '#ffffff' },
       hired: { backgroundColor: '#10b981', color: '#ffffff' }
     };
@@ -939,31 +971,25 @@ function JobApplications() {
     fontSize: '0.875rem',
     cursor: 'pointer',
     transition: 'all 0.3s ease',
-    marginRight: '0.25rem'
+    marginRight: '0.5rem'
   };
 
-  const reviewButtonStyle = {
+  const shortlistButtonStyle = {
     ...buttonStyle,
     color: '#3b82f6',
     borderColor: '#3b82f6'
-  };
-
-  const interviewButtonStyle = {
-    ...buttonStyle,
-    color: '#8b5cf6',
-    borderColor: '#8b5cf6'
-  };
-
-  const hireButtonStyle = {
-    ...buttonStyle,
-    color: '#10b981',
-    borderColor: '#10b981'
   };
 
   const rejectButtonStyle = {
     ...buttonStyle,
     color: '#ef4444',
     borderColor: '#ef4444'
+  };
+
+  const hireButtonStyle = {
+    ...buttonStyle,
+    color: '#10b981',
+    borderColor: '#10b981'
   };
 
   if (loading) {
@@ -983,18 +1009,41 @@ function JobApplications() {
 
   return (
     <div>
-      <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Job Applications</h2>
-      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Review and manage job applications from candidates</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div>
+          <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Job Applications</h2>
+          <p style={{ color: '#6b7280' }}>Review and manage job applications</p>
+        </div>
+        <div>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{
+              padding: '0.5rem 0.75rem',
+              border: '1px solid #d1d5db',
+              borderRadius: '0.375rem',
+              backgroundColor: '#ffffff',
+              fontSize: '0.875rem'
+            }}
+          >
+            <option value="all">All Applications</option>
+            <option value="pending">Pending</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="rejected">Rejected</option>
+            <option value="hired">Hired</option>
+          </select>
+        </div>
+      </div>
 
       <div style={cardStyle}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Candidate Name</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Job Position</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Applicant</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Job Title</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Applied Date</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Qualifications</th>
+                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Transcript</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Status</th>
                 <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
               </tr>
@@ -1002,81 +1051,103 @@ function JobApplications() {
             <tbody>
               {applications.map(application => (
                 <tr key={application.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ padding: '0.75rem' }}>
+                  <td style={{ padding: '0.75rem', color: '#000000' }}>
                     <div>
-                      <strong style={{ color: '#000000' }}>{application.candidateName}</strong>
-                      <br />
-                      <small style={{ color: '#6b7280' }}>{application.candidateEmail}</small>
+                      <div style={{ fontWeight: '600' }}>{application.studentName}</div>
+                      <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>{application.studentEmail}</div>
+                      {application.studentPhone && (
+                        <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>{application.studentPhone}</div>
+                      )}
                     </div>
                   </td>
                   <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.jobTitle}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{new Date(application.appliedAt).toLocaleDateString()}</td>
+                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{application.appliedAt?.toLocaleDateString()}</td>
                   <td style={{ padding: '0.75rem' }}>
-                    <small style={{ color: '#4b5563' }}>
-                      <strong>Degree:</strong> {application.degree}<br />
-                      <strong>GPA:</strong> {application.gpa}<br />
-                      <strong>Skills:</strong> {application.skills}
-                    </small>
+                    <span style={{
+                      backgroundColor: application.transcriptUrl ? '#10b981' : '#6b7280',
+                      color: '#ffffff',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '1rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '600'
+                    }}>
+                      {application.transcriptUrl ? 'Available' : 'Not Available'}
+                    </span>
                   </td>
                   <td style={{ padding: '0.75rem' }}>{getStatusBadge(application.status)}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                      <button 
-                        style={reviewButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'reviewed')}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor = '#3b82f6';
-                          e.target.style.color = '#ffffff';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor = 'transparent';
-                          e.target.style.color = '#3b82f6';
-                        }}
-                      >
-                        Review
-                      </button>
-                      <button 
-                        style={interviewButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'interviewed')}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor = '#8b5cf6';
-                          e.target.style.color = '#ffffff';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor = 'transparent';
-                          e.target.style.color = '#8b5cf6';
-                        }}
-                      >
-                        Interview
-                      </button>
-                      <button 
-                        style={hireButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'hired')}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor = '#10b981';
-                          e.target.style.color = '#ffffff';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor = 'transparent';
-                          e.target.style.color = '#10b981';
-                        }}
-                      >
-                        Hire
-                      </button>
-                      <button 
-                        style={rejectButtonStyle}
-                        onClick={() => handleUpdateStatus(application.id, 'rejected')}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor = '#ef4444';
-                          e.target.style.color = '#ffffff';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor = 'transparent';
-                          e.target.style.color = '#ef4444';
-                        }}
-                      >
-                        Reject
-                      </button>
+                      {application.status === 'pending' && (
+                        <>
+                          <button 
+                            style={shortlistButtonStyle}
+                            onClick={() => handleStatusChange(application.id, 'shortlisted')}
+                            onMouseEnter={(e) => {
+                              e.target.style.backgroundColor = '#3b82f6';
+                              e.target.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.backgroundColor = 'transparent';
+                              e.target.style.color = '#3b82f6';
+                            }}
+                          >
+                            Shortlist
+                          </button>
+                          <button 
+                            style={rejectButtonStyle}
+                            onClick={() => handleStatusChange(application.id, 'rejected')}
+                            onMouseEnter={(e) => {
+                              e.target.style.backgroundColor = '#ef4444';
+                              e.target.style.color = '#ffffff';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.backgroundColor = 'transparent';
+                              e.target.style.color = '#ef4444';
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {application.status === 'shortlisted' && (
+                        <button 
+                          style={hireButtonStyle}
+                          onClick={() => handleStatusChange(application.id, 'hired')}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = '#10b981';
+                            e.target.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = 'transparent';
+                            e.target.style.color = '#10b981';
+                          }}
+                        >
+                          Hire
+                        </button>
+                      )}
+                      {application.transcriptUrl && (
+                        <a 
+                          href={application.transcriptUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{
+                            ...buttonStyle,
+                            color: '#8b5cf6',
+                            borderColor: '#8b5cf6',
+                            textDecoration: 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = '#8b5cf6';
+                            e.target.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = 'transparent';
+                            e.target.style.color = '#8b5cf6';
+                          }}
+                        >
+                          View Transcript
+                        </a>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1088,78 +1159,418 @@ function JobApplications() {
     </div>
   );
 }
-
-// Qualified Candidates Component
-function QualifiedCandidates() {
-  const [candidates, setCandidates] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    degree: '',
-    skills: '',
-    minGPA: ''
-  });
+// Qualified Applicants Component
+function QualifiedApplicants() {
+  const { user } = useAuth();
+  const [qualifiedApplicants, setQualifiedApplicants] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCandidates();
-  }, []);
+    if (user?.uid) {
+      fetchQualifiedApplicants();
+    }
+  }, [user]);
 
-  const fetchCandidates = async () => {
+  const fetchQualifiedApplicants = async () => {
     setLoading(true);
     try {
-      // Simulated data
-      setTimeout(() => {
-        setCandidates([
-          { 
-            id: '1', 
-            name: 'Mike Johnson', 
-            email: 'mike@email.com',
-            degree: 'Computer Science', 
-            institution: 'National University of Lesotho',
-            gpa: 3.8,
-            skills: 'JavaScript, React, Node.js, Python',
-            certificates: 3,
-            matchScore: 85
-          },
-          { 
-            id: '2', 
-            name: 'Sarah Wilson', 
-            email: 'sarah@email.com',
-            degree: 'Data Science', 
-            institution: 'Limkokwing University',
-            gpa: 3.9,
-            skills: 'Python, SQL, Machine Learning, Data Analysis',
-            certificates: 2,
-            matchScore: 92
+      const applicationsRef = collection(db, 'jobApplications');
+      const qualifiedQuery = query(
+        applicationsRef,
+        where('companyId', '==', user.uid),
+        where('transcriptUrl', '!=', ''),
+        orderBy('appliedAt', 'desc')
+      );
+
+      const snapshot = await getDocs(qualifiedQuery);
+      const applicantsData = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(),
+        appliedAt: doc.data().appliedAt?.toDate()
+      }));
+
+      const enhancedApplicants = await Promise.all(
+        applicantsData.map(async (applicant) => {
+          const studentDoc = await getDoc(doc(db, 'students', applicant.studentId));
+          const studentData = studentDoc.exists() ? studentDoc.data() : {};
+          
+          const jobDoc = await getDoc(doc(db, 'jobs', applicant.jobId));
+          const jobData = jobDoc.exists() ? jobDoc.data() : {};
+
+          let matchScore = 50;
+          
+          if (jobData.requirements) {
+            const requirements = Array.isArray(jobData.requirements) ? jobData.requirements : [jobData.requirements];
+            requirements.forEach(req => {
+              const requirement = req.toLowerCase();
+              const studentProfile = `${studentData.highSchool || ''} ${studentData.graduationYear || ''}`.toLowerCase();
+              
+              if (requirement.includes('degree') && applicant.transcriptUrl) {
+                matchScore += 20;
+              }
+              if (requirement.includes('computer science') && studentProfile.includes('science')) {
+                matchScore += 15;
+              }
+              if (requirement.includes('mathematics') && studentProfile.includes('math')) {
+                matchScore += 15;
+              }
+            });
           }
-        ]);
-        setLoading(false);
-      }, 1000);
+
+          return {
+            ...applicant,
+            studentData,
+            jobData,
+            matchScore: Math.min(matchScore, 100)
+          };
+        })
+      );
+
+      enhancedApplicants.sort((a, b) => b.matchScore - a.matchScore);
+      setQualifiedApplicants(enhancedApplicants);
+      setLoading(false);
     } catch (error) {
-      console.error('Error fetching candidates:', error);
+      console.error('Error fetching qualified applicants:', error);
       setLoading(false);
     }
   };
 
-  const handleFilterChange = (e) => {
-    setFilters({
-      ...filters,
+  const handleStatusChange = async (applicationId, newStatus) => {
+    try {
+      await updateDoc(doc(db, 'jobApplications', applicationId), {
+        status: newStatus,
+        updatedAt: new Date()
+      });
+      alert(`Applicant ${newStatus} successfully!`);
+      fetchQualifiedApplicants();
+    } catch (error) {
+      alert('Error updating applicant status');
+      console.error('Error:', error);
+    }
+  };
+
+  const getMatchLevel = (score) => {
+    if (score >= 80) return { level: 'Excellent', color: '#10b981' };
+    if (score >= 60) return { level: 'Good', color: '#3b82f6' };
+    if (score >= 40) return { level: 'Fair', color: '#f59e0b' };
+    return { level: 'Basic', color: '#6b7280' };
+  };
+
+  const cardStyle = {
+    backgroundColor: '#ffffff',
+    border: '2px solid #40e0d0',
+    borderRadius: '0.5rem',
+    padding: '1.5rem',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+  };
+
+  const buttonStyle = {
+    backgroundColor: 'transparent',
+    border: '1px solid',
+    padding: '0.375rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    marginRight: '0.5rem'
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Qualified Applicants</h2>
+      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Automatically filtered applicants based on job requirements and academic qualifications</p>
+
+      {qualifiedApplicants.length === 0 ? (
+        <div style={cardStyle}>
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>
+            <svg style={{ width: '3rem', height: '3rem', fill: '#6b7280', marginBottom: '1rem' }} viewBox="0 0 24 24">
+              <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z" />
+            </svg>
+            <p style={{ margin: '0 0 1rem 0' }}>No qualified applicants found</p>
+            <small style={{ color: '#6b7280' }}>Applicants with uploaded transcripts will appear here automatically</small>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: '1.5rem' }}>
+          {qualifiedApplicants.map(applicant => {
+            const matchInfo = getMatchLevel(applicant.matchScore);
+            return (
+              <div key={applicant.id} style={cardStyle}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ color: '#000000', margin: '0 0 0.5rem 0' }}>{applicant.studentName}</h4>
+                    <p style={{ color: '#4b5563', margin: '0 0 0.5rem 0' }}>
+                      Applied for: <strong>{applicant.jobTitle}</strong>
+                    </p>
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <small style={{ color: '#6b7280' }}>Email: {applicant.studentEmail}</small>
+                      </div>
+                      {applicant.studentData?.phone && (
+                        <div>
+                          <small style={{ color: '#6b7280' }}>Phone: {applicant.studentData.phone}</small>
+                        </div>
+                      )}
+                      <div>
+                        <small style={{ color: '#6b7280' }}>
+                          Applied: {applicant.appliedAt?.toLocaleDateString()}
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{
+                      backgroundColor: matchInfo.color,
+                      color: '#ffffff',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.375rem',
+                      fontWeight: '600',
+                      marginBottom: '0.5rem'
+                    }}>
+                      {applicant.matchScore}% Match
+                    </div>
+                    <small style={{ color: matchInfo.color, fontWeight: '600' }}>
+                      {matchInfo.level} Match
+                    </small>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <h6 style={{ color: '#000000', margin: '0 0 0.5rem 0' }}>Academic Background</h6>
+                    <div style={{ fontSize: '0.875rem', color: '#4b5563' }}>
+                      <div>High School: {applicant.studentData?.highSchool || 'Not specified'}</div>
+                      <div>Graduation Year: {applicant.studentData?.graduationYear || 'Not specified'}</div>
+                      <div>Transcript: <span style={{ color: '#10b981', fontWeight: '600' }}>Available</span></div>
+                    </div>
+                  </div>
+                  <div>
+                    <h6 style={{ color: '#000000', margin: '0 0 0.5rem 0' }}>Job Requirements Match</h6>
+                    <div style={{ fontSize: '0.875rem', color: '#4b5563' }}>
+                      {applicant.jobData.requirements && (
+                        <div>
+                          {Array.isArray(applicant.jobData.requirements) 
+                            ? applicant.jobData.requirements.map((req, idx) => (
+                                <div key={idx}>• {req}</div>
+                              ))
+                            : <div>• {applicant.jobData.requirements}</div>
+                          }
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <a 
+                      href={applicant.transcriptUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{
+                        ...buttonStyle,
+                        color: '#8b5cf6',
+                        borderColor: '#8b5cf6',
+                        textDecoration: 'none'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = '#8b5cf6';
+                        e.target.style.color = '#ffffff';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = '#8b5cf6';
+                      }}
+                    >
+                      View Transcript
+                    </a>
+                    {applicant.studentData?.address && (
+                      <button 
+                        style={{
+                          ...buttonStyle,
+                          color: '#6b7280',
+                          borderColor: '#6b7280'
+                        }}
+                        onClick={() => alert(`Address: ${applicant.studentData.address}`)}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = '#6b7280';
+                          e.target.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'transparent';
+                          e.target.style.color = '#6b7280';
+                        }}
+                      >
+                        View Address
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {applicant.status === 'pending' && (
+                      <>
+                        <button 
+                          style={{
+                            ...buttonStyle,
+                            color: '#3b82f6',
+                            borderColor: '#3b82f6'
+                          }}
+                          onClick={() => handleStatusChange(applicant.id, 'shortlisted')}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = '#3b82f6';
+                            e.target.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = 'transparent';
+                            e.target.style.color = '#3b82f6';
+                          }}
+                        >
+                          Shortlist for Interview
+                        </button>
+                        <button 
+                          style={{
+                            ...buttonStyle,
+                            color: '#ef4444',
+                            borderColor: '#ef4444'
+                          }}
+                          onClick={() => handleStatusChange(applicant.id, 'rejected')}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = '#ef4444';
+                            e.target.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = 'transparent';
+                            e.target.style.color = '#ef4444';
+                          }}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    {applicant.status === 'shortlisted' && (
+                      <button 
+                        style={{
+                          ...buttonStyle,
+                          color: '#10b981',
+                          borderColor: '#10b981'
+                        }}
+                        onClick={() => handleStatusChange(applicant.id, 'hired')}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = '#10b981';
+                          e.target.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'transparent';
+                          e.target.style.color = '#10b981';
+                        }}
+                      >
+                        Mark as Hired
+                      </button>
+                    )}
+                    {(applicant.status === 'shortlisted' || applicant.status === 'hired') && (
+                      <span style={{
+                        backgroundColor: applicant.status === 'hired' ? '#10b981' : '#3b82f6',
+                        color: '#ffffff',
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '1rem',
+                        fontSize: '0.75rem',
+                        fontWeight: '600'
+                      }}>
+                        {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Company Profile Component
+function CompanyProfile() {
+  const { user } = useAuth();
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    industry: '',
+    location: '',
+    contactPerson: '',
+    phone: '',
+    description: '',
+    website: ''
+  });
+
+  useEffect(() => {
+    if (user?.uid) {
+      fetchProfile();
+    }
+  }, [user]);
+
+  const fetchProfile = async () => {
+    setLoading(true);
+    try {
+      const companyDoc = await getDoc(doc(db, 'companies', user.uid));
+      if (companyDoc.exists()) {
+        const companyData = companyDoc.data();
+        setProfile(companyData);
+        setFormData({
+          name: companyData.name || '',
+          email: companyData.email || '',
+          industry: companyData.industry || '',
+          location: companyData.location || '',
+          contactPerson: companyData.contactPerson || '',
+          phone: companyData.phone || '',
+          description: companyData.description || '',
+          website: companyData.website || ''
+        });
+      }
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    setFormData({
+      ...formData,
       [e.target.name]: e.target.value
     });
   };
 
-  const filteredCandidates = candidates.filter(candidate => {
-    return (
-      (!filters.degree || candidate.degree.toLowerCase().includes(filters.degree.toLowerCase())) &&
-      (!filters.skills || candidate.skills.toLowerCase().includes(filters.skills.toLowerCase())) &&
-      (!filters.minGPA || candidate.gpa >= parseFloat(filters.minGPA))
-    );
-  });
-
-  const handleInviteToApply = async (candidateId) => {
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
     try {
-      alert('Candidate invited to apply successfully!');
+      await updateDoc(doc(db, 'companies', user.uid), {
+        ...formData,
+        updatedAt: new Date()
+      });
+      alert('Profile updated successfully!');
+      setEditing(false);
+      fetchProfile();
     } catch (error) {
-      alert('Error inviting candidate');
+      alert('Error updating profile');
       console.error('Error:', error);
     }
   };
@@ -1170,292 +1581,6 @@ function QualifiedCandidates() {
     borderRadius: '0.5rem',
     padding: '1.5rem',
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-  };
-
-  const inputStyle = {
-    width: '100%',
-    padding: '0.5rem 0.75rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '0.375rem',
-    backgroundColor: '#ffffff',
-    fontSize: '0.875rem'
-  };
-
-  const buttonStyle = {
-    backgroundColor: '#40e0d0',
-    color: '#000000',
-    border: '2px solid #40e0d0',
-    padding: '0.5rem 1rem',
-    borderRadius: '0.375rem',
-    fontSize: '0.875rem',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease'
-  };
-
-  const getGPABadge = (gpa) => {
-    let backgroundColor = '#6b7280';
-    if (gpa >= 3.5) backgroundColor = '#10b981';
-    else if (gpa >= 3.0) backgroundColor = '#f59e0b';
-    
-    return (
-      <span style={{
-        backgroundColor,
-        color: backgroundColor === '#f59e0b' ? '#000000' : '#ffffff',
-        padding: '0.25rem 0.75rem',
-        borderRadius: '1rem',
-        fontSize: '0.75rem',
-        fontWeight: '600'
-      }}>
-        {gpa}
-      </span>
-    );
-  };
-
-  const getMatchScoreBadge = (score) => {
-    let backgroundColor = '#6b7280';
-    if (score >= 80) backgroundColor = '#10b981';
-    else if (score >= 60) backgroundColor = '#f59e0b';
-    
-    return (
-      <span style={{
-        backgroundColor,
-        color: backgroundColor === '#f59e0b' ? '#000000' : '#ffffff',
-        padding: '0.25rem 0.75rem',
-        borderRadius: '1rem',
-        fontSize: '0.75rem',
-        fontWeight: '600'
-      }}>
-        {score}%
-      </span>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
-        <div style={{
-          width: '2rem',
-          height: '2rem',
-          border: '2px solid #40e0d0',
-          borderTop: '2px solid transparent',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }}></div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Qualified Candidates</h2>
-      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Find and connect with qualified graduates based on academic performance and skills</p>
-
-      {/* Filters */}
-      <div style={{ ...cardStyle, marginBottom: '2rem' }}>
-        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Filter Candidates</h5>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Degree</label>
-            <input
-              type="text"
-              style={inputStyle}
-              name="degree"
-              value={filters.degree}
-              onChange={handleFilterChange}
-              placeholder="e.g., Computer Science"
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Skills</label>
-            <input
-              type="text"
-              style={inputStyle}
-              name="skills"
-              value={filters.skills}
-              onChange={handleFilterChange}
-              placeholder="e.g., JavaScript, React"
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Minimum GPA</label>
-            <input
-              type="number"
-              style={inputStyle}
-              name="minGPA"
-              value={filters.minGPA}
-              onChange={handleFilterChange}
-              placeholder="e.g., 3.0"
-              step="0.1"
-              min="0"
-              max="4.0"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div style={cardStyle}>
-        <h5 style={{ color: '#000000', marginBottom: '1rem' }}>
-          Qualified Candidates ({filteredCandidates.length})
-        </h5>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Candidate Name</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Degree</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Institution</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>GPA</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Skills</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Certificates</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Match Score</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left', color: '#000000', fontWeight: '600' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCandidates.map(candidate => (
-                <tr key={candidate.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ padding: '0.75rem' }}>
-                    <div>
-                      <strong style={{ color: '#000000' }}>{candidate.name}</strong>
-                      <br />
-                      <small style={{ color: '#6b7280' }}>{candidate.email}</small>
-                    </div>
-                  </td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{candidate.degree}</td>
-                  <td style={{ padding: '0.75rem', color: '#4b5563' }}>{candidate.institution}</td>
-                  <td style={{ padding: '0.75rem' }}>{getGPABadge(candidate.gpa)}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <small style={{ color: '#4b5563' }}>{candidate.skills}</small>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>
-                    {candidate.certificates > 0 ? (
-                      <span style={{
-                        backgroundColor: '#3b82f6',
-                        color: '#ffffff',
-                        padding: '0.25rem 0.75rem',
-                        borderRadius: '1rem',
-                        fontSize: '0.75rem',
-                        fontWeight: '600'
-                      }}>
-                        {candidate.certificates} certificates
-                      </span>
-                    ) : (
-                      <span style={{ color: '#6b7280' }}>None</span>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{getMatchScoreBadge(candidate.matchScore)}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <button 
-                      style={buttonStyle}
-                      onClick={() => handleInviteToApply(candidate.id)}
-                      onMouseEnter={(e) => {
-                        e.target.style.backgroundColor = '#000000';
-                        e.target.style.color = '#40e0d0';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.backgroundColor = '#40e0d0';
-                        e.target.style.color = '#000000';
-                      }}
-                    >
-                      Invite to Apply
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Company Profile Component
-function CompanyProfile() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    industry: '',
-    website: '',
-    description: '',
-    address: '',
-    phone: '',
-    size: ''
-  });
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
-  const fetchProfile = async () => {
-    try {
-      // Simulated profile data
-      setProfile({
-        name: user?.name || 'Tech Solutions Lesotho',
-        email: user?.email || 'hr@techsolutions.ls',
-        industry: 'Information Technology',
-        website: 'www.techsolutions.ls',
-        description: 'Leading technology solutions provider in Lesotho, specializing in software development and digital transformation.',
-        address: 'Maseru, Lesotho',
-        phone: '+266 2234 5678',
-        size: '51-200'
-      });
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    }
-  };
-
-  const handleChange = (e) => {
-    setProfile({
-      ...profile,
-      [e.target.name]: e.target.value
-    });
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      // Simulate API call
-      setTimeout(() => {
-        alert('Profile updated successfully!');
-        setSaving(false);
-      }, 1000);
-    } catch (error) {
-      alert('Error updating profile. Please try again.');
-      console.error('Error updating profile:', error);
-      setSaving(false);
-    }
-  };
-
-  const cardStyle = {
-    backgroundColor: '#ffffff',
-    border: '2px solid #40e0d0',
-    borderRadius: '0.5rem',
-    padding: '1.5rem',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-  };
-
-  const inputStyle = {
-    width: '100%',
-    padding: '0.5rem 0.75rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '0.375rem',
-    backgroundColor: '#ffffff',
-    fontSize: '0.875rem'
-  };
-
-  const selectStyle = {
-    ...inputStyle,
-    backgroundColor: '#ffffff'
-  };
-
-  const textareaStyle = {
-    ...inputStyle,
-    resize: 'vertical',
-    minHeight: '80px'
   };
 
   const buttonStyle = {
@@ -1469,178 +1594,240 @@ function CompanyProfile() {
     transition: 'all 0.3s ease'
   };
 
+  const inputStyle = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '0.375rem',
+    backgroundColor: '#ffffff',
+    fontSize: '0.875rem'
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <div style={{
+          width: '2rem',
+          height: '2rem',
+          border: '2px solid #40e0d0',
+          borderTop: '2px solid transparent',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Company Profile</h2>
-      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>Manage your company's profile information</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div>
+          <h2 style={{ color: '#000000', marginBottom: '0.5rem' }}>Company Profile</h2>
+          <p style={{ color: '#6b7280' }}>Manage your company information</p>
+        </div>
+        {!editing && (
+          <button 
+            style={buttonStyle}
+            onClick={() => setEditing(true)}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#000000';
+              e.target.style.color = '#40e0d0';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#40e0d0';
+              e.target.style.color = '#000000';
+            }}
+          >
+            Edit Profile
+          </button>
+        )}
+      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
-        <div style={cardStyle}>
-          <h5 style={{ color: '#000000', marginBottom: '1.5rem' }}>Company Information</h5>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Company Name</label>
-              <input
-                type="text"
-                style={inputStyle}
-                name="name"
-                value={profile.name}
-                onChange={handleChange}
+      <div style={cardStyle}>
+        {editing ? (
+          <form onSubmit={handleSaveProfile}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Company Name</label>
+                <input
+                  type="text"
+                  style={inputStyle}
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Email</label>
+                <input
+                  type="email"
+                  style={inputStyle}
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Industry</label>
+                <input
+                  type="text"
+                  style={inputStyle}
+                  name="industry"
+                  value={formData.industry}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Location</label>
+                <input
+                  type="text"
+                  style={inputStyle}
+                  name="location"
+                  value={formData.location}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Contact Person</label>
+                <input
+                  type="text"
+                  style={inputStyle}
+                  name="contactPerson"
+                  value={formData.contactPerson}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Phone</label>
+                <input
+                  type="tel"
+                  style={inputStyle}
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Description</label>
+              <textarea
+                style={{ ...inputStyle, minHeight: '100px', resize: 'vertical' }}
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
               />
             </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Email</label>
-              <input
-                type="email"
-                style={{ ...inputStyle, backgroundColor: '#f3f4f6', color: '#6b7280' }}
-                name="email"
-                value={profile.email}
-                onChange={handleChange}
-                disabled
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Industry</label>
-              <input
-                type="text"
-                style={inputStyle}
-                name="industry"
-                value={profile.industry}
-                onChange={handleChange}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Company Size</label>
-              <select
-                style={selectStyle}
-                name="size"
-                value={profile.size}
-                onChange={handleChange}
-              >
-                <option value="">Select Size</option>
-                <option value="1-10">1-10 employees</option>
-                <option value="11-50">11-50 employees</option>
-                <option value="51-200">51-200 employees</option>
-                <option value="201-500">201-500 employees</option>
-                <option value="501+">501+ employees</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Phone</label>
-              <input
-                type="tel"
-                style={inputStyle}
-                name="phone"
-                value={profile.phone}
-                onChange={handleChange}
-              />
-            </div>
-            <div>
+            <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Website</label>
               <input
                 type="url"
                 style={inputStyle}
                 name="website"
-                value={profile.website}
-                onChange={handleChange}
+                value={formData.website}
+                onChange={handleInputChange}
+                placeholder="https://example.com"
               />
             </div>
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Address</label>
-            <textarea
-              style={textareaStyle}
-              name="address"
-              value={profile.address}
-              onChange={handleChange}
-              rows="3"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#000000', fontWeight: '600' }}>Company Description</label>
-            <textarea
-              style={textareaStyle}
-              name="description"
-              value={profile.description}
-              onChange={handleChange}
-              rows="4"
-            />
-          </div>
-
-          <button 
-            style={{
-              ...buttonStyle,
-              opacity: saving ? 0.6 : 1,
-              cursor: saving ? 'not-allowed' : 'pointer'
-            }}
-            onClick={handleSave}
-            disabled={saving}
-            onMouseEnter={(e) => {
-              if (!saving) {
-                e.target.style.backgroundColor = '#000000';
-                e.target.style.color = '#40e0d0';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!saving) {
-                e.target.style.backgroundColor = '#40e0d0';
-                e.target.style.color = '#000000';
-              }
-            }}
-          >
-            {saving ? 'Saving...' : 'Save Profile'}
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={cardStyle}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ marginBottom: '1rem' }}>
-                <svg style={{ width: '3rem', height: '3rem', fill: '#40e0d0' }} viewBox="0 0 24 24">
-                  <path d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z" />
-                </svg>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="submit" style={buttonStyle}>Save Changes</button>
+              <button 
+                type="button" 
+                style={{
+                  ...buttonStyle,
+                  backgroundColor: 'transparent',
+                  color: '#6b7280',
+                  borderColor: '#d1d5db'
+                }}
+                onClick={() => {
+                  setEditing(false);
+                  fetchProfile();
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+              <div>
+                <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Company Information</h5>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <strong style={{ color: '#000000' }}>Company Name:</strong>
+                    <div style={{ color: '#4b5563' }}>{profile?.name}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#000000' }}>Email:</strong>
+                    <div style={{ color: '#4b5563' }}>{profile?.email}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#000000' }}>Industry:</strong>
+                    <div style={{ color: '#4b5563' }}>{profile?.industry}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#000000' }}>Location:</strong>
+                    <div style={{ color: '#4b5563' }}>{profile?.location}</div>
+                  </div>
+                </div>
               </div>
-              <h5 style={{ color: '#000000', margin: '0 0 0.5rem 0' }}>{profile.name}</h5>
-              <p style={{ color: '#6b7280', margin: '0 0 1rem 0' }}>{profile.industry}</p>
-              <div style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem' }}>
-                <small style={{ color: '#6b7280' }}>Company ID: {user?.id}</small>
+              <div>
+                <h5 style={{ color: '#000000', marginBottom: '1rem' }}>Contact Information</h5>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <strong style={{ color: '#000000' }}>Contact Person:</strong>
+                    <div style={{ color: '#4b5563' }}>{profile?.contactPerson}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#000000' }}>Phone:</strong>
+                    <div style={{ color: '#4b5563' }}>{profile?.phone}</div>
+                  </div>
+                  {profile?.website && (
+                    <div>
+                      <strong style={{ color: '#000000' }}>Website:</strong>
+                      <div style={{ color: '#4b5563' }}>
+                        <a href={profile.website} target="_blank" rel="noopener noreferrer" style={{ color: '#40e0d0' }}>
+                          {profile.website}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <strong style={{ color: '#000000' }}>Status:</strong>
+                    <span style={{
+                      backgroundColor: profile?.status === 'active' ? '#10b981' : 
+                                     profile?.status === 'pending' ? '#f59e0b' : '#ef4444',
+                      color: '#ffffff',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '1rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      marginLeft: '0.5rem'
+                    }}>
+                      {profile?.status}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-
-          <div style={cardStyle}>
-            <h6 style={{ color: '#000000', marginBottom: '1rem' }}>Profile Completion</h6>
-            <div style={{ 
-              width: '100%', 
-              backgroundColor: '#e5e7eb', 
-              borderRadius: '0.5rem',
-              overflow: 'hidden',
-              marginBottom: '0.5rem'
-            }}>
-              <div style={{ 
-                width: '85%', 
-                backgroundColor: '#40e0d0', 
-                color: '#000000',
-                padding: '0.5rem',
-                textAlign: 'center',
-                fontWeight: '600',
-                fontSize: '0.875rem'
-              }}>
-                85%
+            {profile?.description && (
+              <div>
+                <h5 style={{ color: '#000000', marginBottom: '0.5rem' }}>Company Description</h5>
+                <p style={{ color: '#4b5563', lineHeight: '1.6' }}>{profile.description}</p>
               </div>
-            </div>
-            <small style={{ color: '#6b7280' }}>Complete your profile to attract better candidates</small>
+            )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -1654,7 +1841,7 @@ function CompanyDashboard() {
         <Route path="/" element={<CompanyDashboardHome />} />
         <Route path="/jobs" element={<ManageJobs />} />
         <Route path="/applications" element={<JobApplications />} />
-        <Route path="/qualified" element={<QualifiedCandidates />} />
+        <Route path="/qualified-applicants" element={<QualifiedApplicants />} />
         <Route path="/profile" element={<CompanyProfile />} />
       </Routes>
     </CompanyLayout>
