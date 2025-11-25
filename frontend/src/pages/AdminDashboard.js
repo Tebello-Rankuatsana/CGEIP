@@ -30,19 +30,19 @@ function AdminLayout({ children }) {
   };
 
   const navItemStyle = {
-    color: '#d1d5db',
-    textDecoration: 'none',
-    padding: '0.75rem 1rem',
-    display: 'block',
-    border: 'none',
-    background: 'none',
-    width: '100%',
-    textAlign: 'left',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    borderRadius: '0.375rem',
-    marginBottom: '0.25rem',
-    fontSize: '0.875rem'
+  color: '#d1d5db',
+  textDecoration: 'none',
+  padding: '0.75rem 1rem',
+  display: 'block',
+  border: 'none',
+  backgroundColor: 'transparent', // Changed from 'background: none'
+  width: '100%',
+  textAlign: 'left',
+  cursor: 'pointer',
+  transition: 'all 0.3s ease',
+  borderRadius: '0.375rem',
+  marginBottom: '0.25rem',
+  fontSize: '0.875rem'
   };
 
   const activeNavItemStyle = {
