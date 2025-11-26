@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation, Routes, Route } from 'react-router-dom';
-import axios from 'axios';
 import { db, auth } from '../firebase';
 import { collection, getDocs, doc, getDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy } from 'firebase/firestore';
 

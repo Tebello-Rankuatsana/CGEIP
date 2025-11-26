@@ -6,13 +6,13 @@ import { getFirestore } from "firebase/firestore";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyCcAaJf33JiTU54Xg0zosO3Rl6GMgCcEck",
-  authDomain: "career-guidance-platform-eea84.firebaseapp.com",
-  projectId: "career-guidance-platform-eea84",
-  storageBucket: "career-guidance-platform-eea84.firebasestorage.app",
-  messagingSenderId: "758320136319",
-  appId: "1:758320136319:web:fb16803577d15251773f4a",
-  measurementId: "G-3M9S16FTCJ"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyCcAaJf33JiTU54Xg0zosO3Rl6GMgCcEck",
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "career-guidance-platform-eea84.firebaseapp.com",
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "career-guidance-platform-eea84",
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "career-guidance-platform-eea84.firebasestorage.app",
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "758320136319",
+  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:758320136319:web:fb16803577d15251773f4a",
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || "G-3M9S16FTCJ"
 };
 
 // Initialize Firebase

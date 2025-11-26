@@ -3,8 +3,6 @@ const app = express();
 import cors from 'cors';
 import 'dotenv/config.js';
 
-
-
 import studentRoutes from "./routes/studentRoutes.js";
 import institutionRoutes from "./routes/institutionRoutes.js";
 import companyRoutes from "./routes/companyRoutes.js";
@@ -50,7 +48,6 @@ app.get("/api/institutions/:institutionId/courses", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 
 // just insuring the routes are working
 app.get("/api/student",(req, res) => {

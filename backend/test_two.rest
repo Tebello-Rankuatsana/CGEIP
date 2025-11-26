@@ -1,6 +1,7 @@
 ### Base URL
-@baseUrl = http://localhost:5001/api
+@baseUrl = https://cgeip-backend-1.onrender.com
 
+GET https://cgeip-backend-1.onrender.com
 
 ### 2. CREATE TEST DATA
 ### Register Student
