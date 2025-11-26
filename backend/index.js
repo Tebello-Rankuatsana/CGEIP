@@ -26,7 +26,7 @@ app.use(cors({
 
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://kt-pathways.onrender.com'  // Add your actual URL here
+  'https://kt-pathways.onrender.com'
 ];
 
 app.use(express.json());

@@ -947,8 +947,10 @@ function JobOpportunities() {
       const jobApplication = {
         studentId: user.uid,
         jobId: jobId,
+        companyId: jobData.companyId,
         studentName: studentData.name,
         studentEmail: studentData.email,
+        studentPhone: studentData.phone || '',
         jobTitle: jobData.title,
         companyName: jobData.companyName,
         status: 'pending',
