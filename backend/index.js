@@ -10,7 +10,25 @@ import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import { createNotification } from './utility/notifications.js';
 
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://kt-pathways.onrender.com'  // Add your actual URL here
+];
+
 app.use(express.json());
 
 
