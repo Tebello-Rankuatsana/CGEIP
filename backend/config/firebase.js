@@ -6,14 +6,18 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Read the service account JSON from disk
-const serviceAccount = JSON.parse(
-  readFileSync(join(__dirname, 'serviceAccountKey.json'), 'utf-8')
-);
+let serviceAccount;
 
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-// });
+// Check if running in production with environment variable
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Production: Parse from environment variable
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+} else {
+  // Development: Read from file
+  serviceAccount = JSON.parse(
+    readFileSync(join(__dirname, 'serviceAccountKey.json'), 'utf-8')
+  );
+}
 
 if (!admin.apps.length) {
   admin.initializeApp({
