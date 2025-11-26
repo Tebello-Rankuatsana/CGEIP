@@ -12,6 +12,11 @@ let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   // Production: Parse from environment variable
   serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  
+  // Fix the private key newlines - replace \\n with actual newlines
+  if (serviceAccount.private_key) {
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+  }
 } else {
   // Development: Read from file
   serviceAccount = JSON.parse(
