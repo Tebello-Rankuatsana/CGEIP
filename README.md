@@ -10,6 +10,7 @@ $ whoami
 ## Team
 ```
 Ceo: just_ranks
+Tech Guy: just_ranks
 ```
 
 ## Tech Stack
