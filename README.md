@@ -11,6 +11,7 @@ $ whoami
 ```
 Ceo: just_ranks
 Tech Guy: just_ranks
+Marketing: just_ranks
 ```
 
 ## Tech Stack
