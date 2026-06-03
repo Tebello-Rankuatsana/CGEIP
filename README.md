@@ -24,3 +24,5 @@ For more information contact
 ```
 t.rankuatsana@gmail.com
 ```
+
+[![Status](https://img.shields.io/badge/Status-Completed-brightgreen)]()
