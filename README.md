@@ -4,7 +4,7 @@
 
 ```
 $ whoami
-> k&t_pathways
+> kt-pathways
 ```
 
 ## Team
